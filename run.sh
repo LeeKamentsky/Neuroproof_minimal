@@ -1,0 +1,1 @@
+/usr/bin/time -v ./NeuroProof_stack -watershed /home/ubuntu/otherh5files/watershed_test.h5 stack -prediction /home/ubuntu/otherh5files/pixel_pred_test.h5 stack   -classifier /home/ubuntu/h5files/agglo_classifier_itr1.h5  -output tst_seg020.h5 stack -algorithm 1 -threshold 0.2 -min_region_sz 0 -nomito

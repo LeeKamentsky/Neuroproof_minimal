@@ -8,6 +8,82 @@
 #include <tr1/unordered_set>
 #include <tr1/unordered_map>
 
+typedef struct {
+  unsigned int id1;
+  unsigned int id2;
+  unsigned char pred;
+  bool boundary; 
+} tfk_edge;
+
+typedef struct {
+  unsigned int id1;
+  unsigned char pred;
+  bool boundary; 
+} tfk_self_edge;
+
+
+
+
+//static int tfk_compare_self (const void * a, const void * b)
+//{
+//  tfk_self_edge* e1 = (tfk_self_edge*)a;
+//  tfk_self_edge* e2 = (tfk_self_edge*)b;
+//  if (e1->id1 < e2->id1) {
+//    return -1;
+//  } else if (e1->id1 > e2->id1) {
+//    return 1;
+//  } else {
+//    return 0;
+//  }
+//}
+//
+//static int tfk_compare (const void * a, const void * b)
+//{
+//  tfk_edge* e1 = (tfk_edge*)a;
+//  tfk_edge* e2 = (tfk_edge*)b;
+//
+//  if (e1->id1 < e2->id1) {
+//    return -1;
+//  } else if (e1->id1 > e2->id1) {
+//    return 1;
+//  } else if (e1->id2 < e2->id2) {
+//    return -1;
+//  } else if (e1->id2 > e2->id2) {
+//    return 1;
+//  } else {
+//    return 0;
+//  }
+//}
+
+
+static inline bool tfk_compare_self (const tfk_self_edge& e1, const tfk_self_edge& e2)
+{
+  if (e1.id1 < e2.id1) {
+    return true;
+  } else {
+    return false;
+  }
+}
+
+static inline bool tfk_compare (const tfk_edge& e1, const tfk_edge& e2)
+{
+  uint64_t e1_key = (((uint64_t)e1.id1) << 32uL) | e1.id2; 
+  uint64_t e2_key = (((uint64_t)e2.id1) << 32uL) | e2.id2; 
+  return e1_key < e2_key;
+
+  //if (e1.id1 < e2.id1) {
+  //  return true;
+  //} else if (e1.id1 > e2.id1) {
+  //  return false;
+  //} else if (e1.id2 < e2.id2) {
+  //  return true;
+  //} else if (e1.id2 > e2.id2) {
+  //  return false;
+  //} else {
+  //  return false;
+  //}
+}
+
 namespace NeuroProof {
 
 template <typename Region>
@@ -19,10 +95,13 @@ class Rag {
     ~Rag();
 
     RagNode<Region>* find_rag_node(Region region);
+    RagNode<Region>* find_rag_node_no_probe(Region region);
     RagNode<Region>* insert_rag_node(Region region);
    
     RagEdge<Region>* find_rag_edge(Region region1, Region region2);
+    RagEdge<Region>* find_rag_edge_no_probe(Region region1, Region region2);
     RagEdge<Region>* find_rag_edge(RagNode<Region>* node1, RagNode<Region>* node2);
+    RagEdge<Region>* find_rag_edge_no_probe(RagNode<Region>* node1, RagNode<Region>* node2);
     RagEdge<Region>* insert_rag_edge(RagNode<Region>* rag_node1, RagNode<Region>* rag_node2);
 
     void remove_rag_node(RagNode<Region>* rag_node);
@@ -289,6 +368,28 @@ template <typename Region> inline RagNode<Region>* Rag<Region>::find_rag_node(Re
     }
     return rag_node;
 }
+
+
+template <typename Region> inline RagNode<Region>* Rag<Region>::find_rag_node_no_probe(Region region)
+{
+    RagNode<Region>* node_to_find = RagNode<Region>::New(Region());
+    node_to_find->set_node_id(region);
+
+    RagNode<Region>* rag_node = 0;
+
+    // boost::mutex::scoped_lock scoped_lock(rag_node_mu);
+    typename NodeHash::iterator rag_node_iter = rag_nodes.find(node_to_find);
+    if (rag_node_iter != rag_nodes.end()) {
+        rag_node = *rag_node_iter;
+    }
+
+    delete node_to_find;
+    return rag_node;
+}
+
+
+
+
 template <typename Region> inline RagNode<Region>* Rag<Region>::find_rag_node(RagNode<Region>* node)
 {
     RagNode<Region>* rag_node = 0;
@@ -321,6 +422,37 @@ template <typename Region> inline RagEdge<Region>* Rag<Region>::find_rag_edge(Re
     if (rag_edge_iter != rag_edges.end()) {
         rag_edge = *rag_edge_iter;
     }
+    return rag_edge;
+}
+
+
+template <typename Region> inline RagEdge<Region>* Rag<Region>::find_rag_edge_no_probe(RagNode<Region>* node1, RagNode<Region>* node2)
+{
+    RagEdge<Region>* rag_edge = 0;
+    RagEdge<Region>* edge_to_find = RagEdge<Region>::New(node1, node2);
+    typename EdgeHash::iterator rag_edge_iter = rag_edges.find(edge_to_find);
+    if (rag_edge_iter != rag_edges.end()) {
+        rag_edge = *rag_edge_iter;
+    }
+    delete edge_to_find;
+    return rag_edge;
+}
+
+template <typename Region> inline RagEdge<Region>* Rag<Region>::find_rag_edge_no_probe(Region region1, Region region2)
+{
+    RagEdge<Region>* rag_edge = 0;
+    RagNode<Region>* node1 = RagNode<Region>::New(Region());
+    node1->set_node_id(region1);
+    RagNode<Region>* node2 = RagNode<Region>::New(Region());
+    node2->set_node_id(region2);
+    RagEdge<Region>* edge_to_find = RagEdge<Region>::New(node1, node2);
+    typename EdgeHash::iterator rag_edge_iter = rag_edges.find(edge_to_find);
+    if (rag_edge_iter != rag_edges.end()) {
+        rag_edge = *rag_edge_iter;
+    }
+    delete node1;
+    delete node2;
+    delete edge_to_find;
     return rag_edge;
 }
 

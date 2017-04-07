@@ -7,6 +7,7 @@ class EdgeClassifier{
 
 public: 
 	virtual void load_classifier(const char*)=0;
+
 	virtual double predict(std::vector<double>&){
 
   	    //srand ( time(NULL) );
@@ -15,6 +16,16 @@ public:
 	    return val;	
 	    
 	}
+
+	virtual std::vector<double> predict_batch(std::vector<std::vector<double> >&){
+  	    //srand ( time(NULL) );
+            //double val= rand()*(1.0/ RAND_MAX);
+            double val= 0.5;
+            std::vector<double> ret;
+            ret.push_back(val);
+            return ret;
+	}
+
 	virtual void learn(std::vector< std::vector<double> >& pfeatures, std::vector<int>& plabels)=0;
 	virtual void save_classifier(const char* rf_filename)=0;
 	virtual bool is_trained()=0;

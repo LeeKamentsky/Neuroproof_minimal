@@ -161,7 +161,7 @@ int main(int argc, char** argv)
     H5Read prediction(prediction_filename.c_str(), prediction_dataset_name.c_str(),true);	
     float* prediction_data=NULL;
     prediction.readData(&prediction_data);	
-    double* prediction_ch1 = new double[depth*height*width];
+    float* prediction_ch1 = new float[depth*height*width];
 
 
 
@@ -208,9 +208,9 @@ int main(int argc, char** argv)
 		}	
 	    }
 
-	    double* zp_prediction_ch1 = NULL;
+	    float* zp_prediction_ch1 = NULL;
 	    padZero(prediction_ch1,watershed.dim(),pad_len,&zp_prediction_ch1);
-	    stackp->add_prediction_channel(zp_prediction_ch1);
+	    //NOTE(TFK): stackp->add_prediction_channel(zp_prediction_ch1);
 	}
 
 	stackp->set_basic_features();  	

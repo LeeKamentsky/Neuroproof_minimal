@@ -6,6 +6,7 @@ using namespace NeuroProof;
 using namespace boost::python;
 #endif 
 
+
 // ?! assume every feature is on every channel -- for now
 
 void FeatureMgr::add_channel()
@@ -326,6 +327,63 @@ double FeatureMgr::get_prob(RagEdge<Label>* edge)
 
     return prob;
 }
+
+
+std::vector<double> FeatureMgr::get_prob_batch(std::vector<RagEdge<Label>*> edge_batch)
+{
+
+    std::vector<std::vector<double> > feature_results_batch;
+    for (int i = 0; i < edge_batch.size(); i++) {
+      feature_results_batch.push_back(std::vector<double>());
+    }
+
+    for (int i = 0; i < edge_batch.size(); i++) {
+      //vector<double> feature_results;
+      compute_all_features(edge_batch[i],feature_results_batch[i]);
+      //feature_results_batch.push_back();
+    }
+    //double prob = 0.0;
+    std::vector<double> prob_batch = eclfr->predict_batch(feature_results_batch);
+    return prob_batch;
+//    if (has_pyfunc) {
+//#ifdef SETPYTHON
+//        boost::python::list pylist;
+//        for (unsigned int i = 0; i < feature_results.size(); ++i) {
+//            pylist.append(feature_results[i]);
+//        }
+//        prob = extract<double>(pyfunc(pylist));
+//#endif
+//    } 
+//    else if (eclfr){
+//	/*remove useless features*/
+//// 	unsigned int tmp_ignore[] = {0, 31, 39, 40, 49, 55, 95, 110, 140, 141, 149, 150, 158, 159, 165, 185}; 
+//// 	std::set<unsigned int> ignore_list;
+//// 	for(size_t ff=0; ff<16; ff++)
+//// 	    ignore_list.insert(tmp_ignore[ff]);
+//
+//        // NOTE(TFK): maybe shouldn't comment this out.
+//	//if (ignore_set.size()>0){
+//	//    vector<double> new_features;
+//	//    for(size_t ff=0; ff<feature_results.size(); ff++)
+//	//	if (ignore_set.find(ff) == ignore_set.end())
+//	//	    new_features.push_back(feature_results[ff]);
+//	//    prob = eclfr->predict(new_features);
+//	//}
+//	/**/
+//	//else
+//	    prob = eclfr->predict_batch(feature_results_batch);
+//    }
+//    else {
+//        prob = feature_results[0];
+//    }
+//    std::cout << prob << std::endl;
+
+//    return prob;
+}
+
+
+
+
 void FeatureMgr::merge_features(RagNode<Label>* node1, RagNode<Label>* node2)
 {
     std::vector<void*>* node1_caches = 0; 

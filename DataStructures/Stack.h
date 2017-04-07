@@ -33,6 +33,10 @@ class Stack {
 
     void build_rag();
 
+    void merge_rags (Rag<Label>* rag1, Rag<Label>* rag2, FeatureMgr* fm1, FeatureMgr* fm2);
+
+    void build_rag_recurse (Rag<Label>* rag1, FeatureMgr* fm1,  
+                                                    int x_start, int x_end, int y_start, int y_end, int z_start, int z_end, bool use_mito_prob);
 
     Label * get_label_volume();
 
@@ -48,7 +52,7 @@ class Stack {
 
 
 
-    void add_prediction_channel(double * prediction_array_)
+    void add_prediction_channel(unsigned char* prediction_array_)
     {
         prediction_array.push_back(prediction_array_);
     
@@ -68,6 +72,8 @@ class Stack {
     }
 
 
+    void build_rag_loop(Rag<Label>* rag, FeatureMgr* feature_man, 
+                                            int x_start, int x_end, int y_start, int y_end, int z_start, int z_end, bool use_mito_prob);
     double get_edge_weight(RagEdge<Label>* edge)
     {
         return feature_mgr->get_prob(edge);
@@ -146,7 +152,7 @@ class Stack {
     
     Rag<Label> * rag;
     Label* watershed;
-    std::vector<double*> prediction_array;
+    std::vector<unsigned char*> prediction_array;
     std::tr1::unordered_map<Label, Label> watershed_to_body; 
     std::tr1::unordered_map<Label, std::vector<Label> > merge_history; 
     //typedef std::tuple<unsigned int, unsigned int, unsigned int> Location;
@@ -211,8 +217,8 @@ public:
     void agglomerate_rag_size(double threshold);
 
     void merge_mitochondria_a();
-    void absorb_small_regions(double* prediction_vol, Label* label_vol);
-    void absorb_small_regions2(double* prediction_vol, Label* label_vol, size_t);
+    void absorb_small_regions(float* prediction_vol, Label* label_vol);
+    void absorb_small_regions2(float* prediction_vol, Label* label_vol, size_t);
 
 };
 

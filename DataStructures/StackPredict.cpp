@@ -1,5 +1,5 @@
 #include "Stack.h"
-
+#include <cilk/cilk.h>
 
 using namespace NeuroProof;
 using namespace std;
@@ -421,7 +421,7 @@ void StackPredict::merge_mitochondria_a()
 // ***********************************absorb small regions*******************************************************
 
 
-void StackPredict::absorb_small_regions(double* prediction_vol, Label* label_vol){
+void StackPredict::absorb_small_regions(float* prediction_vol, Label* label_vol){
 
     std::set<Label> small_regions;
      
@@ -449,7 +449,49 @@ void StackPredict::absorb_small_regions(double* prediction_vol, Label* label_vol
     
 }
 
-void StackPredict::absorb_small_regions2(double* prediction_vol, Label* label_vol, size_t min_region_sz){
+//void StackPredict::absorb_small_regions2(double* prediction_vol, Label* label_vol, size_t min_region_sz){
+//    unsigned long volsz = (depth-2*padding)*(height-2*padding)*(width-2*padding);
+//    /*std::map<Label, unsigned long long> regions_sz;
+//
+//    std::map<Label, unsigned long long>::iterator it;
+//    for(unsigned long long i=0; i< volsz; i++){
+//	Label lbl = label_vol[i];
+//	it = regions_sz.find(lbl);
+//	if ( it != regions_sz.end()){
+//	    (it->second)++;    
+//	}
+//	else{
+//	    regions_sz.insert(std::make_pair(lbl,1));
+//	}
+//    } 
+//    
+//    std::set<Label> small_regions;
+//    for(it = regions_sz.begin(); it != regions_sz.end(); it++)
+//	if ((it->second) < min_region_sz)
+//	    small_regions.insert(it->first);
+//
+//*/
+//    std::set<Label> small_regions;
+//    for (Rag<Label>::nodes_iterator iter = rag->nodes_begin(); iter != rag->nodes_end(); ++iter) {
+//      if ((*iter)->get_size() < min_region_sz) {
+//        small_regions.insert((*iter)->get_node_id()); 
+//      }
+//    }
+//
+//    unsigned long nnz=0; 	
+//    for(unsigned long i=0; i< volsz; i++){
+//	Label lbl = label_vol[i];
+//	if (small_regions.find(lbl) != small_regions.end()){
+//	    label_vol[i] = 0;	
+//	    __sync_fetch_and_add(&nnz, 1);	
+//	}
+//    }
+//    printf("total zeros: %d\n",nnz);
+//    VigraWatershed wshed(depth-2*padding,height-2*padding,width-2*padding);
+//    wshed.run_watershed(prediction_vol,label_vol);
+//}
+
+void StackPredict::absorb_small_regions2(float* prediction_vol, Label* label_vol, size_t min_region_sz){
 
     std::map<Label, unsigned long long> regions_sz;
 
@@ -482,8 +524,7 @@ void StackPredict::absorb_small_regions2(double* prediction_vol, Label* label_vo
     } 
     printf("total zeros: %d\n",nnz);
     VigraWatershed wshed(depth-2*padding,height-2*padding,width-2*padding);
-    wshed.run_watershed(prediction_vol,label_vol);
-
-    
+    //wshed.run_watershed(prediction_vol,label_vol);
+    wshed.run_watershed(prediction_vol, label_vol);
 }
 

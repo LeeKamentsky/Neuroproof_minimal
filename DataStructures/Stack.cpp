@@ -1,12 +1,30 @@
 
 #include "Stack.h"
-
+#include <cilk/cilk.h>
+#include <cilk/cilk_api.h>
+#include <math.h>
 using namespace NeuroProof;
 using namespace std;
 
+#define SIMULATE_SECOND_CHANNEL true
 
+#define BLOCK_SIZE_LIMIT 200
+#define BLOCK_SIZE_LIMIT_Z 10
 
+float array_items[256];
 
+void _set_basic_features(FeatureMgr* fman){
+
+    double hist_percentiles[]={0.1, 0.3, 0.5, 0.7, 0.9};
+    std::vector<double> percentiles(hist_percentiles, hist_percentiles+sizeof(hist_percentiles)/sizeof(double));		
+
+    // ** for Toufiq's version ** feature_mgr->add_inclusiveness_feature(true);  	
+    fman->add_moment_feature(4,true);	
+    fman->add_hist_feature(25,percentiles,false); 	
+
+    //cout << "Number of features, channels:" << feature_mgr->get_num_features()<< ","<<feature_mgr->get_num_channels()<<"\n";	
+
+}
 
 Label find_max(Label* data, const size_t* dims){
     Label max=0;  	
@@ -215,11 +233,354 @@ void Stack::modify_assignment_after_merge(Label node_keep, Label node_remove){
 
 
 
+
+#define TFK_ARRAY_ACCESS(array, stride, x,y,z) array[stride[0]*(x)+stride[1]*(y)+stride[2]*(z)]
+void Stack::build_rag_loop(Rag<Label>* rag, FeatureMgr* feature_man, 
+                                            int x_start, int x_end, int y_start, int y_end, int z_start, int z_end, bool use_mito_prob)
+{
+    unsigned int maxx = width-1; 
+    unsigned int maxy = height-1; 
+    unsigned int maxz = depth-1; 
+
+    unsigned int size_estimate = (z_end-z_start)*(y_end-y_start)*(x_end-x_start);
+    tfk_edge* sorted_edges = (tfk_edge*) malloc(sizeof(tfk_edge)*size_estimate*7);
+    int sorted_edges_len = 0;
+
+    unsigned int * label_vol_array = watershed;
+    unsigned int plane_size = width * height;
+    uint64_t label_vol_stride[3] = {1,width,plane_size}; 
+    tfk_edge edge;
+
+    if (x_start < 0) x_start = 0;
+    if (y_start < 0) y_start = 0;
+    if (z_start < 0) z_start = 0;
+
+    bool avoid_conditionals = true;
+    if (z_start - 1 < 0 || y_start -1 < 0 || x_start - 1 < 0 || z_end+1>maxz || y_end+1 > maxy || x_end+1 > maxx) {
+      avoid_conditionals = false;
+    }
+
+
+    unsigned int spots[7];
+
+    if (avoid_conditionals) {
+      unsigned int* spots_ptr[7];
+      int64_t curr_spot = x_start + y_start*width + z_start*plane_size;
+      spots_ptr[0] = watershed + curr_spot;
+      spots_ptr[1] = watershed + curr_spot-1;
+      spots_ptr[2] = watershed + curr_spot+1;
+      spots_ptr[3] = watershed + curr_spot-width;
+      spots_ptr[4] = watershed + curr_spot+width;
+      spots_ptr[5] = watershed + curr_spot-plane_size;
+      spots_ptr[6] = watershed + curr_spot+plane_size;
+
+      for (unsigned int z = z_start; z < z_end; z++) {
+          int z_spot = z * plane_size;
+          spots_ptr[5] += plane_size;
+          spots_ptr[6] += plane_size;
+          for (unsigned int y = y_start; y < y_end; y++) {
+              int y_spot = y * width;
+              spots_ptr[3] += width;
+              spots_ptr[4] += width;
+              for (unsigned int x = x_start; x < x_end; x++) {
+                  curr_spot = x + y_spot + z_spot;
+                  spots_ptr[0] += 1;
+                  spots_ptr[1] += 1;
+                  spots_ptr[2] += 1;
+                  for (int i = 0; i < 7; i++) {
+                    spots[i] = *(spots_ptr[i]);
+                  }
+
+
+                  unsigned char pred = prediction_array[0][curr_spot];
+
+                  int my_label = spots[0];
+
+                  // sort.
+                  for (int j = 0; j < 7; j++) {
+                     int insert = spots[j];
+                     int hole = j;
+                     while (hole > 0 && insert > spots[hole-1]) {
+                       spots[hole] = spots[hole-1];
+                       hole--;
+                     }
+                     spots[hole] = insert;
+                  }
+          
+                  int last_label = my_label;
+                  bool boundary = false;
+
+                  for (int i = 0; i < 7; i++) {
+                    if (spots[i] == last_label || spots[i] == my_label) continue;
+                    if (!spots[i]) {
+                      boundary = true;
+                      last_label = spots[i];
+                      continue;
+                    }
+                    edge.id1 = my_label;
+                    edge.id2 = spots[i];
+                    edge.pred = pred;
+                    edge.boundary = false;
+                    sorted_edges[sorted_edges_len++] = edge;
+                    last_label = spots[i];
+                  }
+                  // add a self edge.
+                  edge.id1 = my_label;
+                  edge.id2 = my_label;
+                  edge.pred = pred;
+                  edge.boundary = (boundary || !my_label);
+                  sorted_edges[sorted_edges_len++] = edge;
+              }
+          }
+      }
+    } else {
+      for (unsigned int z = z_start; z < z_end; z++) {
+          int z_spot = z * plane_size;
+          //if (z < 0 || z > maxz) continue;
+          for (unsigned int y = y_start; y < y_end; y++) {
+              //if (y < 0 || y > maxy) continue;
+              int y_spot = y * width;
+              for (unsigned int x = x_start; x < x_end; x++) {
+                  //if (x < 0 || x > maxx) continue;
+                  int64_t curr_spot = x + y_spot + z_spot;
+                  spots[0] = watershed[curr_spot];
+                  spots[1] = x >= 0 ? watershed[curr_spot-1] : 0;
+                  spots[2] = x+1 <= maxx ? watershed[curr_spot+1] : 0;
+                  spots[3] = y-1 >=0 ? watershed[curr_spot-width] : 0;
+                  spots[4] = y+1 <= maxy ? watershed[curr_spot+width] : 0;
+                  spots[5] = z-1 >= 0 ? watershed[curr_spot-plane_size] : 0;
+                  spots[6] = z+1 <= maxz ? watershed[curr_spot+plane_size] : 0;
+
+                  unsigned char pred = prediction_array[0][curr_spot];
+
+                  int my_label = spots[0];
+
+                  // sort.
+                  for (int j = 0; j < 7; j++) {
+                     int insert = spots[j];
+                     int hole = j;
+                     while (hole > 0 && insert > spots[hole-1]) {
+                       spots[hole] = spots[hole-1];
+                       hole--;
+                     }
+                     spots[hole] = insert;
+                  }
+          
+                  int last_label = my_label;
+                  bool boundary = false;
+
+                  for (int i = 0; i < 7; i++) {
+                    if (spots[i] == last_label || spots[i] == my_label) continue;
+                    if (!spots[i]) {
+                      boundary = true;
+                      last_label = spots[i];
+                      continue;
+                    }
+                    edge.id1 = my_label;
+                    edge.id2 = spots[i];
+                    edge.pred = pred;
+                    edge.boundary = false;
+                    sorted_edges[sorted_edges_len++] = edge;
+                    last_label = spots[i];
+                  }
+                  // add a self edge.
+                  edge.id1 = my_label;
+                  edge.id2 = my_label;
+                  edge.pred = pred;
+                  edge.boundary = (boundary || !my_label);
+                  sorted_edges[sorted_edges_len++] = edge;
+              }
+          }
+      }
+
+    }
+ 
+    std::sort (sorted_edges, sorted_edges + sorted_edges_len, tfk_compare);
+    rag_add_edge_batch(rag, sorted_edges, sorted_edges_len, feature_man);
+    free(sorted_edges);
+}
+
+
+inline void move_edge_feature (FeatureMgr* fm1, FeatureMgr* fm2, RagEdge<Label>* edge1, RagEdge<Label>* edge2) {
+    // cout << "Move Edge" << endl;
+    edge1->set_size(edge2->get_size()); 
+    EdgeCaches &ec1 = fm1->get_edge_cache();
+    EdgeCaches &ec2 = fm2->get_edge_cache();
+    EdgeCaches::iterator edge_feat2 = ec2.find(edge2);
+    assert(edge_feat2 != ec2.end());
+    ec1[edge1] = ec2[edge2];
+    ec2[edge2] = std::vector<void *>();
+    // fm1->add_val(0.0, edge1);
+    // merge_edge_features(fm1, fm2, edge1, edge2);
+}
+
+void merge_edge_features (FeatureMgr* fm1, FeatureMgr* fm2, RagEdge<Label>* edge1, RagEdge<Label>* edge2) {
+    // cout << "Merge Edge" << endl;
+    edge1->incr_size(edge2->get_size());
+    EdgeCaches &ec1 = fm1->get_edge_cache();
+    EdgeCaches &ec2 = fm2->get_edge_cache();
+    unsigned int pos = 0;
+    unsigned int num_chan = fm1->get_num_channels();
+    for (int i = 0; i < num_chan; ++i) {
+        vector<FeatureCompute*>& features = fm1->get_channel_features()[i];
+        for (int j = 0; j < features.size(); ++j) {
+            if (ec1[edge1][pos] && ec2[edge2][pos]) {
+                features[j]->merge_cache(ec1[edge1][pos], ec2[edge2][pos]);
+            }
+            ++pos;
+        }
+    }    
+}
+
+void move_node_feature (FeatureMgr* fm1, FeatureMgr* fm2, RagNode<Label>* node1, RagNode<Label>* node2) {
+    // cout << "Move Node" << endl;
+    node1->set_size(node2->get_size());
+    node1->set_border_size(node2->get_border_size());
+    NodeCaches &nc1 = fm1->get_node_cache();
+    NodeCaches &nc2 = fm2->get_node_cache();
+    NodeCaches::iterator node_feat2 = nc2.find(node2);
+    // assert(node_feat2 != nc2.end());
+    if (node_feat2 == nc2.end())
+        return;
+    nc1[node1] = nc2[node2];
+    nc2[node2] = std::vector<void *>();
+    // fm1->add_val(0.0, node1);
+    // merge_node_features(fm1, fm2, node1, node2);
+}
+
+void merge_node_features (FeatureMgr* fm1, FeatureMgr* fm2, RagNode<Label>* node1, RagNode<Label>* node2) {
+    // cout << "Merge Node" << endl;
+    NodeCaches &nc1 = fm1->get_node_cache();
+    NodeCaches &nc2 = fm2->get_node_cache();
+    if (nc2.find(node2) == nc2.end()) {
+        return;
+    }
+    if (nc1.find(node1) == nc1.end()) {
+        move_node_feature(fm1, fm2, node1, node2);
+        return;
+    }
+    node1->incr_size(node2->get_size());
+    node1->incr_border_size(node2->get_border_size());
+    unsigned int pos = 0;
+    unsigned int num_chan = fm1->get_num_channels();
+    // cout << "Node 2: " << node2->get_node_id() << endl;
+    for (int i = 0; i < num_chan; ++i) {
+        vector<FeatureCompute*>& features = fm1->get_channel_features()[i];
+        for (int j = 0; j < features.size(); ++j) {
+            if (nc1[node1][pos] && nc2[node2][pos]) {
+                features[j]->merge_cache(nc1[node1][pos], nc2[node2][pos]);
+            }
+            ++pos;
+        }
+    }
+}
+
+
+
+void Stack::merge_rags (Rag<Label>* rag1, Rag<Label>* rag2, FeatureMgr* fm1, FeatureMgr* fm2) {
+    set<Label> processed;
+    for (Rag<Label>::nodes_iterator it1 = rag2->nodes_begin(); it1 != rag2->nodes_end(); ++it1) {
+        assert(processed.find((*it1)->get_node_id()) == processed.end());
+        RagNode<Label> * node1 = rag1->find_rag_node((*it1)->get_node_id());
+        if (!node1) {
+            // if not, insert the node and its incident edges
+            RagNode<Label>* new_node = rag1->insert_rag_node((*it1)->get_node_id());
+            move_node_feature(fm1, fm2, new_node, *it1);
+            // assert(fm1->get_node_cache().find(new_node) != fm1->get_node_cache().end());
+            for (RagNode<Label>::edge_iterator it2 = (*it1)->edge_begin(); it2 != (*it1)->edge_end(); ++it2) {
+                RagNode<Label>* terminal_node = (*it2)->get_other_node(*it1);
+                node1 = rag1->find_rag_node(terminal_node->get_node_id());
+                if (node1) {
+                    // add edge and update node
+                    RagEdge<Label>* new_edge = rag1->insert_rag_edge(node1, new_node);
+                    move_edge_feature(fm1, fm2, new_edge, *it2);
+                    // assert(fm1->get_edge_cache().find(new_edge) != fm1->get_edge_cache().end());
+                }
+            }
+        } else {
+            // merge size. go thru neighbors. if not processed and in rag1, update edge.
+            assert(processed.find(node1->get_node_id()) == processed.end());
+            merge_node_features(fm1, fm2, node1, *it1);
+            for (RagNode<Label>::edge_iterator it2 = (*it1)->edge_begin(); it2 != (*it1)->edge_end(); ++it2) {
+                RagNode<Label>* terminal_node = (*it2)->get_other_node(*it1);
+                RagNode<Label>* node2 = rag1->find_rag_node(terminal_node->get_node_id()); 
+                if (node2) {
+                    if (processed.find(node2->get_node_id()) == processed.end()) {
+                        RagEdge<Label>* new_edge = rag1->find_rag_edge(node1->get_node_id(), node2->get_node_id());
+                        if (new_edge) {
+                            // if edge is already there
+                            merge_edge_features(fm1, fm2, new_edge, *it2);
+                        } else {
+                            new_edge = rag1->insert_rag_edge(node1, node2);
+                            move_edge_feature(fm1, fm2, new_edge, *it2);
+                        }
+                    }
+                }
+            }
+        }
+        processed.insert((*it1)->get_node_id());
+    }
+}
+
+
+void Stack::build_rag_recurse (Rag<Label>* rag1, FeatureMgr* fm1,  
+                                                    int x_start, int x_end, int y_start, int y_end, int z_start, int z_end, bool use_mito_prob) {
+    int x_size = x_end - x_start;
+    int y_size = y_end - y_start;
+    int z_size = z_end - z_start;
+
+    Rag<Label>* rag2 = new Rag<Label>();
+    FeatureMgr* fm2 = new FeatureMgr();
+    fm2->copy_channel_features(fm1);
+    //FeatureMgr* fm2 = new FeatureMgr(prediction_array.size());
+    //_set_basic_features(fm2); 
+
+    bool stop_recurse = false;
+
+    if (x_size >= y_size && x_size >= z_size) {
+        if (x_size > BLOCK_SIZE_LIMIT) {
+            cilk_spawn build_rag_recurse(rag1, fm1,  x_start, x_start + x_size/2, y_start, y_end, z_start, z_end, use_mito_prob);
+            build_rag_recurse(rag2, fm2, x_start + x_size/2, x_end, y_start, y_end, z_start, z_end, use_mito_prob);
+            cilk_sync;
+        } else {
+            stop_recurse = true;
+        }
+    } else if (y_size >= x_size && y_size >= z_size) {
+        if (y_size > BLOCK_SIZE_LIMIT) {
+            cilk_spawn build_rag_recurse(rag1, fm1, x_start, x_end, y_start, y_start + y_size/2, z_start, z_end, use_mito_prob);
+            build_rag_recurse(rag2, fm2, x_start, x_end, y_start + y_size/2, y_end, z_start, z_end, use_mito_prob);
+            cilk_sync;
+        } else {
+            stop_recurse = true;
+        }
+    } else {
+        if (z_size > BLOCK_SIZE_LIMIT_Z) {
+            cilk_spawn build_rag_recurse(rag1, fm1, x_start, x_end, y_start, y_end, z_start, z_start + z_size/2, use_mito_prob);
+            build_rag_recurse(rag2, fm2, x_start, x_end, y_start, y_end, z_start + z_size/2, z_end, use_mito_prob);
+            cilk_sync;
+        } else {
+            stop_recurse = true;
+        }
+    }
+
+    if (stop_recurse) {
+        build_rag_loop(rag1, fm1, x_start, x_end, y_start, y_end, z_start, z_end, use_mito_prob);
+    } else {
+        merge_rags(rag1, rag2, fm1, fm2);
+        //if (use_mito_prob)
+        //    merge_mito_probs (mito_prob1, mito_prob2);
+    }
+}
+
+
+
+
 void Stack::build_rag()
 {
     if (feature_mgr && (feature_mgr->get_num_features() == 0)) {
         feature_mgr->add_median_feature();
-        median_mode = true; 
+        median_mode = true;
+        printf("In median mode wtf?\n");
     } 
     
     unsigned int plane_size = width * height;
@@ -227,88 +588,16 @@ void Stack::build_rag()
     std::tr1::unordered_set<Label> labels;
     unsigned long long curr_spot;
     
-//     FILE* fp = fopen("/groups/scheffer/home/paragt/Neuroproof_lean/NeuroProof_toufiq/check_rag_old.txt","wt");
     unsigned int wcount=0;
+    int x_start = 1;
+    int x_end = width-1;
+    int y_start = 1;
+    int y_end = height-1;
+    int z_start = 1;
+    int z_end = depth-1;
+    bool use_mito_prob = false; 
+    build_rag_recurse (rag, feature_mgr, x_start, x_end, y_start, y_end, z_start, z_end, false);
 
-    for (unsigned int z = 1; z < (depth-1); ++z) {
-        int z_spot = z * plane_size;
-        for (unsigned int y = 1; y < (height-1); ++y) {
-            int y_spot = y * width;
-            for (unsigned int x = 1; x < (width-1); ++x) {
-                curr_spot = x + y_spot + z_spot;
-                unsigned int spot0 = watershed[curr_spot];
-                unsigned int spot1 = watershed[curr_spot-1];
-                unsigned int spot2 = watershed[curr_spot+1];
-                unsigned int spot3 = watershed[curr_spot-width];
-                unsigned int spot4 = watershed[curr_spot+width];
-                unsigned int spot5 = watershed[curr_spot-plane_size];
-                unsigned int spot6 = watershed[curr_spot+plane_size];
-
-                
-                RagNode<Label> * node = rag->find_rag_node(spot0);
-                if (!node) {
-                    node = rag->insert_rag_node(spot0);
-                }
-                
-//                 fprintf(fp,"%u %u %u %u ", x-1, y-1, z-1, node->get_node_id());
-                
-                for (unsigned int i = 0; i < prediction_array.size(); ++i) {
-                    predictions[i] = prediction_array[i][curr_spot];
-		    
-// 		    fprintf(fp,"%lf ", predictions[i]);
-                }
-// 		fprintf(fp,"\n");
-
-                if (feature_mgr && !median_mode) {
-                    feature_mgr->add_val(predictions, node);
-                }
-                
-		   // if(gtruth) 
-			//node->add_member_idx(gtruth, curr_spot);
-
-		node->get_type_decider()->update(predictions); 
-
-
-		// *C* point on the border with other superpixel
-                if (spot1 && (spot0 != spot1)) {
-                    rag_add_edge(rag, spot0, spot1, predictions, feature_mgr);
-                    labels.insert(spot1);
-                }
-                if (spot2 && (spot0 != spot2) && (labels.find(spot2) == labels.end())) {
-                    rag_add_edge(rag, spot0, spot2, predictions, feature_mgr);
-                    labels.insert(spot2);
-                }
-                if (spot3 && (spot0 != spot3) && (labels.find(spot3) == labels.end())) {
-                    rag_add_edge(rag, spot0, spot3, predictions, feature_mgr);
-                    labels.insert(spot3);
-                }
-                if (spot4 && (spot0 != spot4) && (labels.find(spot4) == labels.end())) {
-                    rag_add_edge(rag, spot0, spot4, predictions, feature_mgr);
-                    labels.insert(spot4);
-                }
-                if (spot5 && (spot0 != spot5) && (labels.find(spot5) == labels.end())) {
-                    rag_add_edge(rag, spot0, spot5, predictions, feature_mgr);
-                    labels.insert(spot5);
-                }
-                if (spot6 && (spot0 != spot6) && (labels.find(spot6) == labels.end())) {
-                    rag_add_edge(rag, spot0, spot6, predictions, feature_mgr);
-                }
-           
-                // point on volume border
-                if (!spot1 || !spot2 || !spot3 || !spot4 || !spot5 || !spot6) {
-                    node->incr_border_size();
-                }
-
-
-
-
-                labels.clear();
-
-            }
-        }
-    } 
-
-//     fclose(fp);
     if (merge_mito)
 	printf("Deciding mito sps with thd= %.3lf ...", mito_thd);
     watershed_to_body[0] = 0;
@@ -320,11 +609,11 @@ void Stack::build_rag()
     }
 
     
-//     unsigned int ecount = 0;
-//     for (Rag<Label>::edges_iterator iter = rag->edges_begin(); iter != rag->edges_end(); ++iter) {
-// 	(*iter)->set_edge_id(ecount);
-// 	ecount++;     
-//     }
+     //unsigned int ecount = 0;
+     //for (Rag<Label>::edges_iterator iter = rag->edges_begin(); iter != rag->edges_end(); ++iter) {
+     //   (*iter)->set_edge_id(ecount);
+     //   ecount++;     
+     //}
 }
 
 

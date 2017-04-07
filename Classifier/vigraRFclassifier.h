@@ -7,8 +7,8 @@
 #include <vigra/random_forest/rf_common.hxx>
 #include <vigra/hdf5impex.hxx>
 #include <vigra/random_forest_hdf5_impex.hxx>
-
 #include "edgeclassifier.h"
+#include <vector>
 
 using namespace std;
 using namespace vigra;
@@ -33,6 +33,7 @@ public:
      }	
      void  load_classifier(const char* rf_filename);
      double predict(std::vector<double>& features);
+     std::vector<double> predict_batch(std::vector< std::vector<double> >& batch_features);
      void learn(std::vector< std::vector<double> >& pfeatures, std::vector<int>& plabels);
      void save_classifier(const char* rf_filename);
      

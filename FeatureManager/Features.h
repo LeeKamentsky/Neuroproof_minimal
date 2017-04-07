@@ -7,6 +7,8 @@
 #include "../DataStructures/RagEdge.h"
 #include "../DataStructures/Glb.h"
 
+#define SIMULATE_SECOND_CHANNEL true
+
 namespace NeuroProof {
 
 class FeatureCompute {
@@ -14,7 +16,8 @@ class FeatureCompute {
     virtual void * create_cache() = 0;
     virtual void copy_cache(void* src, void* dest)=0;  	
     virtual void delete_cache(void * cache) = 0;
-    virtual void add_point(double val, void * cache, unsigned int x = 0, unsigned int y = 0, unsigned int z = 0) = 0;
+    virtual void add_point(unsigned char val, void * cache, bool invert = false, unsigned int x = 0, unsigned int y = 0, unsigned int z = 0) = 0;
+    virtual void add_point_batch(std::vector<unsigned char>* val, void * cache, bool invert = false) = 0;
     virtual void  get_feature_array(void* cache, std::vector<double>& feature_array, RagEdge<Label>* edge, unsigned int node_num) = 0; 
     virtual void  get_diff_feature_array(void* cache2, void * cache1, std::vector<double>& feature_array, RagEdge<Label>* edge) = 0; 
     // will delete second cache
@@ -31,7 +34,8 @@ class FeatureHist : public FeatureCompute {
     void * create_cache();
     void copy_cache(void* src, void* dest);  	
     void delete_cache(void * cache);
-    void add_point(double val, void * cache, unsigned int x = 0, unsigned int y = 0, unsigned int z = 0);
+    void add_point(unsigned char val, void * cache, bool invert = false, unsigned int x = 0, unsigned int y = 0, unsigned int z = 0);
+    void add_point_batch(std::vector<unsigned char>* val, void * cache, bool invert = false);
     void get_feature_array(void* cache, std::vector<double>& feature_array, RagEdge<Label>* edge, unsigned int node_num);
     void  get_diff_feature_array(void* cache2, void * cache1, std::vector<double>& feature_array, RagEdge<Label>* edge);
     void merge_cache(void * cache1, void * cache2);
@@ -56,7 +60,8 @@ class FeatureMoment : public FeatureCompute {
     void * create_cache();
     void copy_cache(void* src, void* dest);  	
     void delete_cache(void * cache);
-    void add_point(double val, void * cache, unsigned int x = 0, unsigned int y = 0, unsigned int z = 0);
+    void add_point(unsigned char val, void * cache, bool invert = false, unsigned int x = 0, unsigned int y = 0, unsigned int z = 0);
+    void add_point_batch(std::vector<unsigned char>* val, void * cache, bool invert = false);
     void get_feature_array(void* cache, std::vector<double>& feature_array, RagEdge<Label>* edge, unsigned int node_num);
     void  get_diff_feature_array(void* cache2, void * cache1, std::vector<double>& feature_array, RagEdge<Label>* edge);
     void merge_cache(void * cache1, void * cache2);
@@ -85,9 +90,12 @@ class FeatureInclusiveness : public FeatureCompute {
         return;
     }
 
-    void add_point(double val, void * cache, unsigned int x = 0, unsigned int y = 0, unsigned int z = 0)
+    void add_point(unsigned char val, void * cache, bool invert = false, unsigned int x = 0, unsigned int y = 0, unsigned int z = 0)
     {
         return;
+    }
+    void add_point_batch(std::vector<unsigned char>* val, void * cache, bool invert) {
+      return;
     }
     
     void get_feature_array(void* cache, std::vector<double>& feature_array, RagEdge<Label>* edge, unsigned int node_num);
@@ -122,12 +130,17 @@ class FeatureCount : public FeatureCompute {
         delete (CountCache*)(cache);
     }
 
-    void add_point(double val, void * cache, unsigned int x = 0, unsigned int y = 0, unsigned int z = 0)
+    void add_point(unsigned char val, void * cache, bool invert = false, unsigned int x = 0, unsigned int y = 0, unsigned int z = 0)
     {
         CountCache * count_cache = (CountCache*) cache;
         count_cache->count += 1;
     }
     
+    void add_point_batch(std::vector<unsigned char>* val, void * cache, bool invert) {
+        CountCache * count_cache = (CountCache*) cache;
+        count_cache->count += val->size();
+    }
+
     void get_feature_array(void* cache, std::vector<double>& feature_array, RagEdge<Label>* edge, unsigned int node_num)
     {
         CountCache * count_cache = (CountCache*) cache;

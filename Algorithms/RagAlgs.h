@@ -13,7 +13,6 @@
 
 //#include "../ConvexHull/region_hull.h"
 
-
 namespace NeuroProof {
 
 template <typename Region>
@@ -42,7 +41,7 @@ void rag_unbind_property_list(Rag<Region>* rag, std::string property_type)
 }
 */
 template <typename Region>
-void rag_add_edge(Rag<Region>* rag, unsigned int id1, unsigned int id2, std::vector<double>& preds, 
+void rag_add_edge(Rag<Region>* rag, unsigned int id1, unsigned int id2, std::vector<unsigned char>& preds, 
         FeatureMgr * feature_mgr)
 {
     RagNode<Region> * node1 = rag->find_rag_node(id1);
@@ -65,7 +64,145 @@ void rag_add_edge(Rag<Region>* rag, unsigned int id1, unsigned int id2, std::vec
     if (feature_mgr) {
         feature_mgr->add_val(preds, edge);
     }
+}
+
+
+
+
+template <typename Region>
+void rag_add_self_edge_batch(Rag<Region>* rag, tfk_self_edge* edge_array, int num_edges, FeatureMgr * feature_mgr) {
+   if (num_edges == 0) return;
+
+   tfk_self_edge curr_edge = edge_array[0];
+   int last_node1 = curr_edge.id1;
+   RagNode<Region> * node1 = rag->find_rag_node(curr_edge.id1);
+   if (!node1) {
+     node1 = rag->insert_rag_node(curr_edge.id1);
+   }
+
+   int boundary_count = 0;
+   std::vector<unsigned char> predictions;
+   predictions.clear();
+   for (int i = 0; i < num_edges; i++) {
+      curr_edge = edge_array[i];
+        if (curr_edge.id1 != last_node1) {
+          if (feature_mgr/* && last_node1 == last_node2*/) {
+             feature_mgr->add_val_batch(&predictions, node1);
+             predictions.clear();
+          }
+             if (boundary_count > 0) {
+               node1->incr_border_size(boundary_count);
+               boundary_count = 0;
+             }
+
+          node1 = rag->find_rag_node(curr_edge.id1);
+          if (!node1) {
+            node1 = rag->insert_rag_node(curr_edge.id1);
+          }
+        }
+
+      if (curr_edge.boundary) {
+        boundary_count++;
+      }
+      last_node1 = curr_edge.id1;
+      predictions.push_back(curr_edge.pred);
+   }
+   if (predictions.size() > 0 && feature_mgr/* && last_node1 == last_node2*/) {
+     feature_mgr->add_val_batch(&predictions, node1);
+   }
+   if (boundary_count > 0) {
+     node1->incr_border_size(boundary_count);
+   }
 }  
+
+
+
+template <typename Region>
+void rag_add_edge_batch(Rag<Region>* rag, tfk_edge* edge_array, int num_edges, FeatureMgr * feature_mgr) {
+   if (num_edges == 0) return;
+
+   tfk_edge curr_edge = edge_array[0];
+   int last_node1 = curr_edge.id1;
+   int last_node2 = curr_edge.id2;
+   RagNode<Region> * node1 = rag->find_rag_node(curr_edge.id1);
+   if (!node1) {
+     node1 = rag->insert_rag_node(curr_edge.id1);
+   }
+   RagNode<Region> * node2 = rag->find_rag_node(curr_edge.id2);
+   if (!node2) {
+     node2 = rag->insert_rag_node(curr_edge.id2);
+   }
+ 
+   RagEdge<Region>* edge = NULL;
+   int boundary_count = 0;
+   std::vector<unsigned char> predictions;
+   predictions.clear();
+   for (int i = 0; i < num_edges; i++) {
+      curr_edge = edge_array[i];
+
+        if (curr_edge.id1 != last_node1) {
+          if (feature_mgr && last_node1 == last_node2) {
+             feature_mgr->add_val_batch(&predictions, node1);
+             predictions.clear();
+          }
+             if (boundary_count > 0) {
+               node1->incr_border_size(boundary_count);
+               boundary_count = 0;
+             }
+
+          node1 = rag->find_rag_node(curr_edge.id1);
+          if (!node1) {
+            node1 = rag->insert_rag_node(curr_edge.id1);
+          }
+        }
+
+        if (curr_edge.id2 != last_node2) {
+
+          if (feature_mgr && last_node1 == last_node2) {
+             feature_mgr->add_val_batch(&predictions, node1);
+             predictions.clear();
+          }
+
+          node2 = rag->find_rag_node(curr_edge.id2);
+          if (!node2) {
+            node2 = rag->insert_rag_node(curr_edge.id2);
+          }
+        }
+
+        if (edge==NULL || (curr_edge.id1 != last_node1 || curr_edge.id2 != last_node2)) {
+
+          if (feature_mgr && edge != NULL&& last_node1 != last_node2) {
+             feature_mgr->add_val_batch(&predictions, edge);
+             predictions.clear();
+          }
+          if (curr_edge.id1 != curr_edge.id2) {
+            edge = rag->find_rag_edge(node1, node2);
+            
+            if (!edge) {
+                edge = rag->insert_rag_edge(node1, node2);
+            }
+          }
+        }
+
+      if (curr_edge.boundary) {
+        boundary_count++;
+      }
+      last_node1 = curr_edge.id1;
+      last_node2 = curr_edge.id2;
+      predictions.push_back(curr_edge.pred);
+   }
+
+   if (predictions.size() > 0 && feature_mgr && edge != NULL && last_node1 != last_node2) {
+     feature_mgr->add_val_batch(&predictions, edge);
+   }
+   if (predictions.size() > 0 && feature_mgr && last_node1 == last_node2) {
+     feature_mgr->add_val_batch(&predictions, node1);
+   }
+   if (boundary_count > 0) {
+     node1->incr_border_size(boundary_count);
+   }
+}  
+  
 /*
 
 template <typename Region, typename T>

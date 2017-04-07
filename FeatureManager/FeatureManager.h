@@ -7,6 +7,7 @@
 #include "Features.h"
 #include <tr1/unordered_map>
 
+#define SIMULATE_SECOND_CHANNEL true
 
 // #ifdef SETPYTHON
 // #include <boost/python.hpp>
@@ -48,8 +49,9 @@ class FeatureMgr {
         return num_channels;
     }
 
-    void add_val(double val, RagNode<Label>* node)
+    void add_val(unsigned char _val, RagNode<Label>* node)
     {
+        float val = _val*1.0/255.0;
         unsigned int starting_pos = 0;
         if (node_caches.find(node) != node_caches.end()) {
             add_val(val, 0, starting_pos, node_caches[node]);
@@ -59,8 +61,9 @@ class FeatureMgr {
         } 
     } 
     
-    void add_val(double val, RagEdge<Label>* edge)
+    void add_val(unsigned char _val, RagEdge<Label>* edge)
     {
+        float val = _val*1.0/255.0;
         unsigned int starting_pos = 0;
         if (edge_caches.find(edge) != edge_caches.end()) {
             add_val(val, 0, starting_pos, edge_caches[edge]);
@@ -69,8 +72,79 @@ class FeatureMgr {
             add_val(val, 0, starting_pos, feature_caches);
         } 
     } 
+ 
+    void add_val_batch(std::vector<unsigned char>* val, unsigned int channel, unsigned int& starting_pos, std::vector<void *>& feature_caches)
+    {
+        std::vector<FeatureCompute*>& features = channels_features[channel];
+        //printf("Channel is %d\n", channel);
+        for (int i = 0; i < features.size(); ++i) {
+            #if SIMULATE_SECOND_CHANNEL
+            features[i]->add_point_batch(val, feature_caches[starting_pos], channel > 0); 
+            #else
+            features[i]->add_point_batch(val, feature_caches[starting_pos]);
+            #endif
+            ++starting_pos;
+        }
+    }
 
-    void add_val(std::vector<double>& vals, RagNode<Label>* node)
+    // for simulate second channel.
+    void add_val_batch(std::vector<unsigned char>* values, RagNode<Label>* node)
+    {
+        node->incr_size(values->size());
+        //assert(values->size() == num_channels);
+        unsigned starting_pos = 0;
+        if (node_caches.find(node) != node_caches.end()) {
+            std::vector<void*>& feature_caches = node_caches[node];
+            for (int i = 0; i < num_channels; ++i) { 
+                add_val_batch(values, i, starting_pos, feature_caches);
+            }              
+        } else {
+            std::vector<void*>& feature_caches = create_cache(node);
+            for (int i = 0; i < num_channels; ++i) { 
+                add_val_batch(values, i, starting_pos, feature_caches);
+            }
+        }        
+    }
+
+    void add_val_batch(std::vector<unsigned char>* values, RagEdge<Label>* edge)
+    { 
+        edge->incr_size(values->size());
+        //assert(vals.size() == num_channels);
+        unsigned int starting_pos = 0;
+        if (edge_caches.find(edge) != edge_caches.end()) {
+            std::vector<void*>& feature_caches = edge_caches[edge];
+            for (int i = 0; i < num_channels; ++i) { 
+                add_val_batch(values, i, starting_pos, feature_caches);
+            }           
+        } else {
+            std::vector<void*>& feature_caches = create_cache(edge);
+            for (int i = 0; i < num_channels; ++i) { 
+                add_val_batch(values, i, starting_pos, feature_caches);
+            }        
+        } 
+    }
+
+
+
+    void add_val_batch(std::vector<std::vector<unsigned char> >* values, RagNode<Label>* node)
+    {
+        node->incr_size((*values)[0].size());
+        assert(values->size() == num_channels);
+        unsigned starting_pos = 0;
+        if (node_caches.find(node) != node_caches.end()) {
+            std::vector<void*>& feature_caches = node_caches[node];
+            for (int i = 0; i < num_channels; ++i) { 
+                add_val_batch(&((*values)[i]), i, starting_pos, feature_caches);
+            }              
+        } else {
+            std::vector<void*>& feature_caches = create_cache(node);
+            for (int i = 0; i < num_channels; ++i) { 
+                add_val_batch(&((*values)[i]), i, starting_pos, feature_caches);
+            }
+        }        
+    }
+
+    void add_val(std::vector<unsigned char>& vals, RagNode<Label>* node)
     {
         node->incr_size();
         assert(vals.size() == num_channels);
@@ -88,7 +162,7 @@ class FeatureMgr {
         }        
     }
 
-    void add_val(std::vector<double>& vals, RagEdge<Label>* edge)
+    void add_val(std::vector<unsigned char>& vals, RagEdge<Label>* edge)
     { 
         edge->incr_size();
         assert(vals.size() == num_channels);
@@ -154,6 +228,8 @@ class FeatureMgr {
     void add_inclusiveness_feature(bool use_diff);
 
     double get_prob(RagEdge<Label>* edge);
+    std::vector<double> get_prob_batch(std::vector< RagEdge<Label>*> edge);
+
     void get_responses(RagEdge<Label>* edge, vector<double>& responses);
 
     void compute_all_features(RagEdge<Label>* edge, std::vector<double>&);
@@ -182,15 +258,15 @@ class FeatureMgr {
     void compute_features(unsigned int prediction_type, std::vector<void*>* caches, std::vector<double>& feature_results, RagEdge<Label>* edge, unsigned int node_num);
     void compute_features2(unsigned int prediction_type, std::vector<void*>* caches, std::vector<double>& feature_results, RagEdge<Label>* edge, unsigned int node_num);
 
-    void add_val(double val, unsigned int channel, unsigned int& starting_pos, std::vector<void *>& feature_caches)
+    void add_val(unsigned char val, unsigned int channel, unsigned int& starting_pos, std::vector<void *>& feature_caches)
     {
         std::vector<FeatureCompute*>& features = channels_features[channel];
         for (int i = 0; i < features.size(); ++i) {
-            features[i]->add_point(val, feature_caches[starting_pos]); 
+            features[i]->add_point(val, feature_caches[starting_pos], channel > 0); 
             ++starting_pos;
         }
     }
-    
+   
     // !! assume all edge/node caches
     std::vector<void*>& create_cache(RagEdge<Label>* edge)
     {

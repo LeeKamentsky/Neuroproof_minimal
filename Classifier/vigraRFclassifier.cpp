@@ -1,6 +1,43 @@
 #include "vigraRFclassifier.h"
 // #include "assert.h"
 #include <time.h>
+#include <vector>
+
+namespace vigra {
+
+
+// NOTE(TFK): Highly conservative threshold check. Improves agglomeration time by a factor of 2.
+     /// should never change the result.
+class StopConservativeThreshold : public StopBase
+{
+public:
+    double max_tree_p;
+    int max_tree_;
+    typedef StopBase SB;
+    int min_split_node_size_;
+    double thresh;
+    int tree_count;
+
+    template<class Opt>
+    StopConservativeThreshold(Opt opt, double _thresh) {
+      thresh = _thresh;
+      min_split_node_size_ = opt.min_split_node_size_; 
+      tree_count = opt.tree_count_; 
+    }
+
+    template<class Region>
+    bool operator()(Region& region)
+    {
+        return region.size() < min_split_node_size_;
+    }
+
+    template<class WeightIter, class T, class C>
+    bool after_prediction(WeightIter weightIter, int k, MultiArrayView<2, T, C> const &  prob , double totalCt) {
+      if (prob(0,1) > thresh) return true;
+      return false;
+    }
+};
+}
 
 VigraRFclassifier::VigraRFclassifier(const char* rf_filename){
 
@@ -41,6 +78,39 @@ void  VigraRFclassifier::load_classifier(const char* rf_filename){
 	
 }
 
+std::vector<double> VigraRFclassifier::predict_batch(std::vector< std::vector<double> >& batch_features){
+	//if(!_rf){
+	//    return(EdgeClassifier::predict(features));
+	//}
+// 	if(_nfeatures != features.size()){
+// 	    printf("number of features differet in classifer\n ");
+// 	    exit(0);
+// 	}
+
+        MultiArray<2, float> vfeatures(Shape(batch_features.size(),_nfeatures));
+     	MultiArray<2, float> prob(Shape(batch_features.size(), _nclass));
+
+        for (int j = 0; j < batch_features.size(); j++) {
+	  for(int i = 0; i < _nfeatures; i++) {
+	        vfeatures(j,i)= (float)batch_features[j][i];
+          }
+        }
+        vigra::StopConservativeThreshold stop = vigra::StopConservativeThreshold(_rf->options_,0.2*255);
+        _rf->predictProbabilities(vfeatures, prob, stop);
+
+	/*debug*/
+	std::vector<double> vp(_nclass);
+	for(int i=0;i<_nclass;i++)
+	    vp[i] = prob(0,i);	
+	/**/
+        std::vector<double> results;
+        for (int i = 0; i < batch_features.size(); i++) {
+          results.push_back(prob(i,1));
+        }
+        return results;
+	//return (double) prob(0,1);
+}	
+
 double VigraRFclassifier::predict(std::vector<double>& features){
 	if(!_rf){
 	    return(EdgeClassifier::predict(features));
@@ -54,8 +124,9 @@ double VigraRFclassifier::predict(std::vector<double>& features){
 	for(int i=0;i<_nfeatures;i++)
 	      vfeatures(0,i)= (float)features[i];
 
-
-        _rf->predictProbabilities(vfeatures, prob);    
+        vigra::StopConservativeThreshold stop = vigra::StopConservativeThreshold(_rf->options_, 0.2*255);
+        _rf->predictProbabilities(vfeatures, prob, stop);
+        //_rf->predictProbabilities(vfeatures, prob);    
 
 	/*debug*/
 	std::vector<double> vp(_nclass);

@@ -3,12 +3,13 @@
 
 #include "RagNode.h"
 #include <boost/functional/hash.hpp>
-
+#include <stdio.h>
 namespace NeuroProof {
 
 template <typename Region>
 class RagEdge {
   public:
+    bool dirty;
     static RagEdge<Region>* New(RagNode<Region>* node1, RagNode<Region>* node2)
     {
         return new RagEdge(node1, node2);  
@@ -97,7 +98,6 @@ class RagEdge {
     unsigned long long edge_size;
     bool preserve;
     bool false_edge;
-    bool dirty;
 
     int qloc;	
     int cc_id;	

@@ -11,6 +11,12 @@ project (Classifier)
 # SET(CMAKE_DEBUG_POSTFIX "-g")
 # 
 
+   #set (CMAKE_C_COMPILER "${CMAKE_CURRENT_SOURCE_DIR}/../cilkplus-install/bin/gcc") 
+   #set (CMAKE_CXX_COMPILER "${CMAKE_CURRENT_SOURCE_DIR}/../cilkplus-install/bin/g++")
+   #set (CMAKE_C_COMPILER ${CMAKE_SOURCE_DIR}/cilkplus-install/bin/gcc) 
+   #set (CMAKE_CXX_COMPILER ${CMAKE_SOURCE_DIR}/cilkplus-install/bin/g++)
+   SET(CMAKE_CXX_FLAGS "-fcilkplus -O3")
+   SET(CMAKE_CXX_LINK_FLAGS "-lcilkrts")
 set (SOURCES opencvRFclassifier.cpp vigraRFclassifier.cpp)
 
 add_library (Classifier SHARED ${SOURCES})

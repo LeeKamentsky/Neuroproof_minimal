@@ -2,6 +2,7 @@
 #include "Features.h"
 
 using namespace NeuroProof;
+extern float array_items[256];
 
   
 void* FeatureHist::create_cache(){
@@ -33,7 +34,37 @@ void FeatureHist::delete_cache(void * cache) {
         delete (HistCache*)(cache);
 }
 
-void FeatureHist::add_point(double val, void * cache, unsigned int x , unsigned int y , unsigned int z ) {
+void FeatureHist::add_point_batch(std::vector<unsigned char>* values, void * cache, bool invert) {
+        HistCache * hist_cache = (HistCache*) cache;
+        int bins[256];  
+        for (int i = 0; i < 256; i++) {
+          bins[i] = 0;
+        }
+
+        if (invert) {
+          for (int i = 0; i < values->size(); i++) {
+            bins[(*values)[i]]++;
+          }
+          for (int i = 0; i < 256; i++) {
+            float approx = array_items[255-i];//1.0-(*values)[i]*1.0/255;
+            hist_cache->hist[(approx) * num_bins] += bins[i];
+          }
+        } else {
+          for (int i = 0; i < values->size(); i++) {
+            bins[(*values)[i]]++;
+          }
+          for (int i = 0; i < 256; i++) {
+            float approx = i*1.0/255.0;//1.0-(*values)[i]*1.0/255;
+            hist_cache->hist[(approx) * num_bins] += bins[i];
+          }
+        }
+        hist_cache->count += values->size();
+}
+
+void FeatureHist::add_point(unsigned char _val, void * cache, bool invert, unsigned int x , unsigned int y , unsigned int z ) {
+        float val = _val*1.0/255.0;
+        if (invert) val = array_items[255-_val];
+
         HistCache * hist_cache = (HistCache*) cache;
         ++(hist_cache->hist[val * num_bins]);
         ++(hist_cache->count);
@@ -126,11 +157,56 @@ void FeatureMoment::delete_cache(void * cache) {
         delete (MomentCache*)(cache);
 }
 
-void FeatureMoment::add_point(double val, void * cache, unsigned int x, unsigned int y, unsigned int z){
+
+
+void FeatureMoment::add_point_batch(std::vector<unsigned char>* values, void * cache, bool invert){
+        MomentCache * moment_cache = (MomentCache*) cache;
+        moment_cache->count += values->size();
+
+        int bins[256];  
+        for (int i = 0; i < 256; i++) {
+          bins[i] = 0;
+        }
+        for (int i = 0; i < values->size(); i++) {
+          bins[(*values)[i]]++;
+        }
+
+        if (invert) {
+          for (int j = 0; j < 256; j++) {
+            float val = array_items[255-j];
+            double p = 1.0;
+            int count = bins[j];
+            if (count == 0) continue;
+            for (int i = 0; i < num_moments; ++i) {
+              p *= val; 
+              moment_cache->vals[i] += p*count;
+            }
+          }
+        } else {
+          for (int j = 0; j < 256; j++) {
+            float val = j*1.0/255.0;
+            double p = 1.0;
+            int count = bins[j];
+            if (count == 0) continue;
+            for (int i = 0; i < num_moments; ++i) {
+              p *= val; 
+              moment_cache->vals[i] += p*count;
+            }
+          }
+        }
+}
+
+
+
+void FeatureMoment::add_point(unsigned char _val, void * cache, bool invert, unsigned int x, unsigned int y, unsigned int z){
+        float val = _val*1.0/255.0;
+        if (invert) val = array_items[255-_val];
         MomentCache * moment_cache = (MomentCache*) cache;
         moment_cache->count += 1;
+        double p = 1.0;
         for (int i = 0; i < num_moments; ++i) {
-            moment_cache->vals[i] += std::pow(val, i+1);
+            p *= val;
+            moment_cache->vals[i] += p;
         } 
 }
     
