@@ -22,7 +22,7 @@ class VigraRFclassifier: public EdgeClassifier{
      RandomForest<>* _rf;
      int _nfeatures;
      int _nclass;	
-	
+     double threshold;	
     std::vector<unsigned int> ignore_featlist;
 
 public:
@@ -36,7 +36,9 @@ public:
      std::vector<double> predict_batch(std::vector< std::vector<double> >& batch_features);
      void learn(std::vector< std::vector<double> >& pfeatures, std::vector<int>& plabels);
      void save_classifier(const char* rf_filename);
-     
+     void set_threshold(double thresh) {
+       threshold = thresh;
+     }     
      
      void set_ignore_featlist(std::vector<unsigned int>& pignore_list){ignore_featlist = pignore_list;};
      void get_ignore_featlist(std::vector<unsigned int>& pignore_list){pignore_list = ignore_featlist;};

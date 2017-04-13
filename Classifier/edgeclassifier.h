@@ -17,6 +17,12 @@ public:
 	    
 	}
 
+	virtual void set_threshold(double thresh){
+  	    //srand ( time(NULL) );
+            //double val= rand()*(1.0/ RAND_MAX);
+            return;
+	}
+
 	virtual std::vector<double> predict_batch(std::vector<std::vector<double> >&){
   	    //srand ( time(NULL) );
             //double val= rand()*(1.0/ RAND_MAX);
