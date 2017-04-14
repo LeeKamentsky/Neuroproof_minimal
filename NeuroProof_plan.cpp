@@ -1,22 +1,21 @@
+/* Neuroproof interface for reading and writing data from ariadne_microns_pipeline
+ * using loading and storage plans
+ */
 #include "DataStructures/Stack.h"
-// #include "Priority/GPR.h"
-// #include "Priority/LocalEdgePriority.h"
-// #include "Utilities/ScopeTime.h"
-// #include "ImportsExports/ImportExportRagPriority.h"
 #include <fstream>
 #include <sstream>
 #include <cassert>
 #include <iostream>
+#include <iomanip>
 #include <memory>
-// #include <json/json.h>
-// #include <json/value.h>
 
-#include "Utilities/h5read.h"
-#include "Utilities/h5write.h"
+#include "Utilities/loading_plan.h"
+#include "Utilities/storage_plan.h"
 
 #include <ctime>
 #include <cmath>
 #include <cstring>
+#include <vector>
 
 //#include <google/profiler.h>
 
@@ -80,17 +79,17 @@ EdgeClassifier* load_classifier(std::string classifier_filename) {
     return eclfr;
 }
 
-void load_watershed(std::string watershed_filename, std::string watershed_dataset_name, Label** zp_watershed_data) {
-    H5Read watershed(watershed_filename.c_str(),watershed_dataset_name.c_str());	
+void load_watershed(std::string watershed_filename, Label** zp_watershed_data) {
     Label* watershed_data=NULL;	
-    watershed.readData(&watershed_data);	
-    int depth =	 watershed.dim()[0];
-    int height = watershed.dim()[1];
-    int width =	 watershed.dim()[2];
+    size_t width = 0;
+    size_t height = 0;
+    size_t depth = 0;
+    read_loading_plan(watershed_filename, watershed_data, width, height, depth);
+    size_t dim[3] = { depth, height, width };
 	
     int pad_len=1;
     //Label *zp_watershed_data=NULL;
-    padZero(watershed_data, watershed.dim(),pad_len,zp_watershed_data);
+    padZero(watershed_data, dim, pad_len, zp_watershed_data);
 
     // NOTE(TFK): Original unpadded watershed data is never used after this point. Can delete.
     delete[] watershed_data;
@@ -108,27 +107,23 @@ int main(int argc, char** argv)
     printf("%f\n", 1.0/256);
 
 
-    if (argc<15){
-	printf("format: NeuroProof_stack -watershed watershed_h5_file  dataset \
-					 -prediction prediction_h5_file dataset \
-					 -classifier classifier_file \
-					 -output output_h5_file dataset \
-					 -groundtruth groundtruth_h5_file dataset \
-					 -threshold agglomeration_threshold \
-					 -algorithm algorithm_type\n");
+    if (argc<11){
+	std::cout << "format: NeuroProof_plan -watershed watershed_loading_plan" << std::endl
+		  << "                        -prediction prediction_loading_plan" << std::endl
+		  << "                        -classifier classifier_file" << std::endl
+		  << "                        -output output_storage_plan" << std::endl
+		  << "                        -groundtruth groundtruth_loading_plan" << std::endl
+		  << "                        -threshold agglomeration_threshold" << std::endl
+		  << "                        -algorithm algorithm_type" << std::endl;
 	return 0;
     }	
 
     //ProfilerStart("profile.data");
     int argc_itr=1;	
     string watershed_filename="";
-    string watershed_dataset_name="";		
     string prediction_filename="";
-    string prediction_dataset_name="";		
     string output_filename;
-    string output_dataset_name;		
     string groundtruth_filename="";
-    string groundtruth_dataset_name="";		
     string classifier_filename;
 
     string output_filename_nomito;
@@ -144,7 +139,6 @@ int main(int argc, char** argv)
     while(argc_itr<argc){
 	if (!(strcmp(argv[argc_itr],"-watershed"))){
 	    watershed_filename = argv[++argc_itr];
-	    watershed_dataset_name = argv[++argc_itr];
 	}
 
 	if (!(strcmp(argv[argc_itr],"-classifier"))){
@@ -152,15 +146,12 @@ int main(int argc, char** argv)
 	}
 	if (!(strcmp(argv[argc_itr],"-prediction"))){
 	    prediction_filename = argv[++argc_itr];
-	    prediction_dataset_name = argv[++argc_itr];
 	}
 	if (!(strcmp(argv[argc_itr],"-output"))){
 	    output_filename = argv[++argc_itr];
-	    output_dataset_name = argv[++argc_itr];
 	}
 	if (!(strcmp(argv[argc_itr],"-groundtruth"))){
 	    groundtruth_filename = argv[++argc_itr];
-	    groundtruth_dataset_name = argv[++argc_itr];
 	}
 
 	if (!(strcmp(argv[argc_itr],"-threshold"))){
@@ -193,102 +184,48 @@ int main(int argc, char** argv)
     time(&start);	
 
     EdgeClassifier* eclfr = load_classifier(classifier_filename);
-//    if (endswith(classifier_filename, ".h5")){
-//	string nameonly = classifier_filename.substr(0, classifier_filename.find_last_of("."));	
-//// 	if (nameonly.find("parallel") != std::string::npos)
-//// 	    eclfr = new VigraRFclassifierP(classifier_filename.c_str());
-//// 	else
-//	    eclfr = new VigraRFclassifier(classifier_filename.c_str());	
-//    }	      
-////     	eclfr = new VigraRFclassifier(classifier_filename.c_str());	
-//    else if (endswith(classifier_filename, ".xml")){
-//	string nameonly = classifier_filename.substr(0, classifier_filename.find_last_of("."));	
-//// 	if (nameonly.find("parallel") != std::string::npos)
-//// 	    eclfr = new OpencvRFclassifierP(classifier_filename.c_str());	
-//// 	else
-//	    eclfr = new OpencvRFclassifier(classifier_filename.c_str());	
-//    }
-//	//eclfr = new CompositeRFclassifier(classifier_filename.c_str());	
-//// 	eclfr = new OpencvRFclassifier(classifier_filename.c_str());	
 
-    
-
-    H5Read prediction(prediction_filename.c_str(),prediction_dataset_name.c_str(), true);	
-    float* prediction_data=NULL;
-    prediction.readData(&prediction_data);	
-    int depth =	 prediction.dim()[0];
-    int height = prediction.dim()[1];
-    int width =	 prediction.dim()[2];
+   unsigned char* prediction_single_ch=NULL;
+    size_t depth = 0;
+    size_t height = 0;
+    size_t width = 0; 
+    read_loading_plan(
+	prediction_filename, prediction_single_ch, width, height, depth);
     int pad_len=1;
+    size_t dim[3] = { depth, height, width };
 	
-    //float* prediction_ch0 = new float[depth*height*width];
-
-
-    // NOTE(TFK): prediction_single_ch is used as a buffer. The last channel (ch0) is
-    //    process last, and so prediction_ch0 points to it. This is correct because
-    //    after processing all channels the buffer will contain the contents of channel 0.
-    unsigned char* prediction_single_ch = new unsigned char[depth*height*width];
-    unsigned char* prediction_ch0 = prediction_single_ch;
-
-    size_t cube_size, plane_size, element_size=prediction.dim()[prediction.total_dim()-1];
-    size_t position, count;		  
-
-
-    // NOTE(TFK): In order to reuse the buffer space (prediction_single_ch) for prediction_ch0
-    //    we need to process the channels in reverse order. To avoid changing the
-    //    order of prediction channels in the Stack we push the channels to a vector
-    //    and add them to the Stack in order of channel id.  	
-    //for (int ch=0; ch < element_size; ch++){
     std::vector<unsigned char*> prediction_channel_list;
-    //std::set<float> dedupe;
-    for (int ch = element_size; --ch >=0;) {
-	count = 0;
-	for(int i=0; i<depth; i++){
-	    int cube_size = height*width*element_size;	
-	    for(int j=0; j<height; j++){
-		int plane_size = width*element_size;
-		for(int k=0; k<width; k++){
-		    int position = i*cube_size + j*plane_size + k*element_size + ch;
-                    if (ch==element_size-1) {
-		      //prediction_single_ch[count] = (unsigned char) prediction_data[position]; 
-                      array_items[(unsigned char) lround(255-255*prediction_data[position-1])] = prediction_data[position];
-                      //if (dedupe.find(prediction_data[position]) == dedupe.end()) {
-                      //  dedupe.insert(prediction_data[position]);
-                      //  printf("entry %d value %f\n", lround(255-255*prediction_data[position-1]), prediction_data[position]);
-                      //}
-                    } else {
-                      //int real_post = i*height*width + j*width + k;
-		      prediction_single_ch[count] = (unsigned char) lround(255*prediction_data[position]);
-                    }
-		    count++;					
-                    //__sync_fetch_and_add(&count, 1);
-		}		
-	    }	
-	}
-	unsigned char* zp_prediction_single_ch = NULL;
-        if (ch==0) {	
-	  padZero(prediction_single_ch,prediction.dim(),pad_len,&zp_prediction_single_ch);
-        } 
-          prediction_channel_list.push_back(zp_prediction_single_ch);
-          
-	//if (ch == 0)
-	//    memcpy(prediction_ch0, prediction_single_ch, depth*height*width*sizeof(float));	
-	//stackp->add_prediction_channel(zp_prediction_single_ch);
+
+    unsigned char* zp_prediction_single_ch = NULL;
+    
+    padZero(prediction_single_ch, dim, pad_len, &zp_prediction_single_ch);
+    prediction_channel_list.push_back(zp_prediction_single_ch);
+    size_t n_elements = depth * height * width;
+    //
+    // The second channel is the inverse of the first, using the values
+    // in array_items to do the flipping. Set the second channel to null
+    //
+    for (int i=0; i < 256; i++) {
+	array_items[i] = (float)(i) / 255.0;
     }
+    zp_prediction_single_ch=NULL;
+    //padZero(prediction_single_ch, dim, pad_len, &zp_prediction_single_ch);
+    prediction_channel_list.push_back(zp_prediction_single_ch);
+
     //printf("size fo the set is %d\n", dedupe.size());
 
     // NOTE(TFK): Prediction data not used after this point. This is not ideal place to
     //     delete this data, because I don't believe it decreases the code's memory
     //     high-water mark. But might as well delete it.
-    delete[] prediction_data;
+    delete[] prediction_single_ch;
 
     Label* zp_watershed_data = NULL;
-    load_watershed(watershed_filename, watershed_dataset_name, &zp_watershed_data);
+    load_watershed(watershed_filename, &zp_watershed_data);
     StackPredict* stackp = new StackPredict(zp_watershed_data, depth+2*pad_len, height+2*pad_len, width+2*pad_len, pad_len);
     stackp->set_feature_mgr(new FeatureMgr());
     stackp->set_merge_mito(merge_mito, mito_thd);
 
-    for (int i = prediction_channel_list.size(); --i>=0;) {
+    for (int i = 0; i < prediction_channel_list.size(); i++) {
       stackp->add_prediction_channel(prediction_channel_list[i]);
     }
 
@@ -296,9 +233,8 @@ int main(int argc, char** argv)
     stackp->get_feature_mgr()->set_classifier(eclfr);   	 
 
     Label* groundtruth_data=NULL;
-    if (groundtruth_filename.size()>0){  	
-	H5Read groundtruth(groundtruth_filename.c_str(),groundtruth_dataset_name.c_str());	
-        groundtruth.readData(&groundtruth_data);	
+    if (groundtruth_filename.size()>0){
+	read_loading_plan(groundtruth_filename, groundtruth_data, width, height, depth);
         stackp->set_groundtruth(groundtruth_data);
     }	
 	
@@ -357,20 +293,12 @@ int main(int argc, char** argv)
     time(&start_agg);	
     Label * temp_label_volume1D = stackp->get_label_volume();       	    
     if (!merge_mito/* && min_region_sz > 0*/) {
-      printf("Absort small regions2 in !merge_mito\n");
+      printf("Absorb small regions2 in !merge_mito\n");
       //stackp->absorb_small_regions2(prediction_ch0, temp_label_volume1D, min_region_sz);
       printf("After Absort small regions2 in !merge_mito\n");
     }
-
-    hsize_t dims_out[3];
-    dims_out[0]=depth; dims_out[1]= height; dims_out[2]= width;   
-    H5Write(output_filename_nomito.c_str(),output_dataset_name.c_str(),3,dims_out, temp_label_volume1D);
-    printf("Output-nomito written to %s, dataset %s\n",output_filename_nomito.c_str(),output_dataset_name.c_str());	
-    delete[] temp_label_volume1D;	
-    time(&end);	
-    printf("Writing output time %.4f\n", (difftime(end,start_agg))*1.0);
-
-    if (merge_mito){
+    else
+    {
 	cout<<"Merge Mitochondria (border-len) ..."; 
 	stackp->merge_mitochondria_a();
     	cout<<"done with "<< stackp->get_num_bodies()<< " regions\n";	
@@ -386,11 +314,10 @@ int main(int argc, char** argv)
         // NOTE(TFK): stackp->absorb_small_regions2(prediction_ch0, temp_label_volume1D, min_region_sz);
         printf("After Absorb small regions2 in merge_mito\n");
 
-        dims_out[0]=depth; dims_out[1]= height; dims_out[2]= width;   
-        H5Write(output_filename.c_str(),output_dataset_name.c_str(),3,dims_out, temp_label_volume1D);
-        printf("Output written to %s, dataset %s\n",output_filename.c_str(),output_dataset_name.c_str());	
-        delete[] temp_label_volume1D;	
-    } 	
+    }
+    write_storage_plan(output_filename, temp_label_volume1D, width, height, depth);
+    printf("Output written to %s\n",output_filename.c_str());
+    delete[] temp_label_volume1D;	
     //stackp->determine_edge_locations();
     //stackp->write_graph(output_filename);
 
@@ -403,10 +330,6 @@ int main(int argc, char** argv)
 //	delete[] watershed_data;
     delete[] zp_watershed_data;
 	
-    //if (prediction_data)  	
-    //  delete[] prediction_data;
-    delete[] prediction_single_ch;
-
     if (groundtruth_data)  	
 	delete[] groundtruth_data;
 
