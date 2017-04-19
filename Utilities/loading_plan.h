@@ -94,21 +94,25 @@ template <typename T> void read_loading_plan(
             TIFFGetField(tiff, TIFFTAG_IMAGEWIDTH, &tiffWidth);
             if (tiffWidth != svx1 - svx0) {
                 TIFFClose(tiff);
+                std::cerr << "TIFF width not equal to expected" << std::endl;
                 throw NeuroProof::ErrMsg("TIFF width not equal to expected");
             }
             TIFFGetField(tiff, TIFFTAG_IMAGELENGTH, &tiffHeight);
             if (tiffHeight != svy1 - svy0) {
                 TIFFClose(tiff);
+                std::cerr << "TIFF height not equal to expected" << std::endl;
                 throw NeuroProof::ErrMsg("TIFF height not equal to expected");
             }
             TIFFGetField(tiff, TIFFTAG_BITSPERSAMPLE, &tiffBitsPerSample);
             if (tiffBitsPerSample / 8 != sizeof(T)) {
                 TIFFClose(tiff);
+                std::cerr << "# of bits / pixel does not match" << std::endl;
                 throw NeuroProof::ErrMsg("# of bits / pixel does not match");
             }
             TIFFGetField(tiff, TIFFTAG_SAMPLESPERPIXEL, &tiffSamplesPerPixel);
             if (tiffSamplesPerPixel != 1) {
                 TIFFClose(tiff);
+                std::cerr << "More than one sample / pixel" << std::endl;
                 throw NeuroProof::ErrMsg("More than one sample / pixel");
             }
            

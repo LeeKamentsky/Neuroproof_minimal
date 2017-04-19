@@ -65,15 +65,15 @@ template <typename T> void write_storage_plan(
     Json::Value blocks = d["blocks"];
     cilk_for (int i=0; i < blocks.size(); i++) {
         Json::Value subvolume = blocks[i][0];
-        Json::UInt width = subvolume["width"].asUInt();
-        Json::UInt height = subvolume["height"].asUInt();
-        Json::UInt depth = subvolume["depth"].asUInt();
+        Json::UInt swidth = subvolume["width"].asUInt();
+        Json::UInt sheight = subvolume["height"].asUInt();
+        Json::UInt sdepth = subvolume["depth"].asUInt();
         Json::UInt svx0 = subvolume["x"].asUInt();
         Json::UInt svy0 = subvolume["y"].asUInt();
         Json::UInt svz0 = subvolume["z"].asUInt();
-        Json::UInt svx1 = svx0 + width;
-        Json::UInt svy1 = svy0 + height;
-        Json::UInt svz1 = svz0 + depth;
+        Json::UInt svx1 = svx0 + swidth;
+        Json::UInt svy1 = svy0 + sheight;
+        Json::UInt svz1 = svz0 + sdepth;
         std::string location = blocks[i][1].asString();
         cout << "Writing " << location << endl;
         cout << "  x=" << svx0 << ":" << svx1;
@@ -85,8 +85,8 @@ template <typename T> void write_storage_plan(
         }
         try {
             for (Json::UInt tiffZ=svz0; tiffZ < svz1; tiffZ++) {
-                TIFFSetField(tiff, TIFFTAG_IMAGEWIDTH, width);
-                TIFFSetField(tiff, TIFFTAG_IMAGELENGTH, height);
+                TIFFSetField(tiff, TIFFTAG_IMAGEWIDTH, swidth);
+                TIFFSetField(tiff, TIFFTAG_IMAGELENGTH, sheight);
                 TIFFSetField(tiff, TIFFTAG_BITSPERSAMPLE,
                              sizeof(T) * 8);
                 TIFFSetField(tiff, TIFFTAG_SAMPLESPERPIXEL, 1);
