@@ -33,7 +33,7 @@ public:
 
     template<class WeightIter, class T, class C>
     bool after_prediction(WeightIter weightIter, int k, MultiArrayView<2, T, C> const &  prob , double totalCt) {
-      if (prob(0,1) > thresh) return true;
+      if (prob(0,1) > thresh*tree_count) return true;
       return false;
     }
 };
@@ -95,7 +95,7 @@ std::vector<double> VigraRFclassifier::predict_batch(std::vector< std::vector<do
 	        vfeatures(j,i)= (float)batch_features[j][i];
           }
         }
-        vigra::StopConservativeThreshold stop = vigra::StopConservativeThreshold(_rf->options_,0.2*255);
+        vigra::StopConservativeThreshold stop = vigra::StopConservativeThreshold(_rf->options_,threshold);
         _rf->predictProbabilities(vfeatures, prob, stop);
 
 	/*debug*/
@@ -124,7 +124,7 @@ double VigraRFclassifier::predict(std::vector<double>& features){
 	for(int i=0;i<_nfeatures;i++)
 	      vfeatures(0,i)= (float)features[i];
 
-        vigra::StopConservativeThreshold stop = vigra::StopConservativeThreshold(_rf->options_, 0.2*255);
+        vigra::StopConservativeThreshold stop = vigra::StopConservativeThreshold(_rf->options_, threshold);
         _rf->predictProbabilities(vfeatures, prob, stop);
         //_rf->predictProbabilities(vfeatures, prob);    
 

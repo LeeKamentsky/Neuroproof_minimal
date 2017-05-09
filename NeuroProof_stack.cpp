@@ -193,6 +193,7 @@ int main(int argc, char** argv)
     time(&start);	
 
     EdgeClassifier* eclfr = load_classifier(classifier_filename);
+    eclfr->set_threshold(threshold);
 //    if (endswith(classifier_filename, ".h5")){
 //	string nameonly = classifier_filename.substr(0, classifier_filename.find_last_of("."));	
 //// 	if (nameonly.find("parallel") != std::string::npos)
