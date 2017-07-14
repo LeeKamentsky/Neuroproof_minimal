@@ -596,7 +596,11 @@ void Stack::build_rag()
     int z_start = 1;
     int z_end = depth-1;
     bool use_mito_prob = false; 
-    build_rag_recurse (rag, feature_mgr, x_start, x_end, y_start, y_end, z_start, z_end, false);
+    if (__cilkrts_get_nworkers() > 1) {
+	build_rag_recurse (rag, feature_mgr, x_start, x_end, y_start, y_end, z_start, z_end, false);
+    } else {
+	build_rag_loop (rag, feature_mgr, x_start, x_end, y_start, y_end, z_start, z_end, false);
+    }
 
     if (merge_mito)
 	printf("Deciding mito sps with thd= %.3lf ...", mito_thd);
