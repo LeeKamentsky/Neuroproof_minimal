@@ -121,7 +121,7 @@ int main(int argc, char** argv)
     //ProfilerStart("profile.data");
     int argc_itr=1;	
     string watershed_filename="";
-    string prediction_filename="";
+    std::vector<string> prediction_filenames;
     string output_filename;
     string groundtruth_filename="";
     string classifier_filename;
@@ -145,7 +145,7 @@ int main(int argc, char** argv)
 	    classifier_filename = argv[++argc_itr];
 	}
 	if (!(strcmp(argv[argc_itr],"-prediction"))){
-	    prediction_filename = argv[++argc_itr];
+	    prediction_filenames.push_back(argv[++argc_itr]);
 	}
 	if (!(strcmp(argv[argc_itr],"-output"))){
 	    output_filename = argv[++argc_itr];
@@ -182,15 +182,16 @@ int main(int argc, char** argv)
 
     time_t start, end, start_agg, start_rag;
     time(&start);	
-
+    
     EdgeClassifier* eclfr = load_classifier(classifier_filename);
+    eclfr->set_threshold(threshold);
 
    unsigned char* prediction_single_ch=NULL;
     size_t depth = 0;
     size_t height = 0;
     size_t width = 0; 
     read_loading_plan(
-	prediction_filename, prediction_single_ch, width, height, depth);
+	prediction_filenames.front(), prediction_single_ch, width, height, depth);
     int pad_len=1;
     size_t dim[3] = { depth, height, width };
 	
@@ -218,7 +219,31 @@ int main(int argc, char** argv)
     //     delete this data, because I don't believe it decreases the code's memory
     //     high-water mark. But might as well delete it.
     delete[] prediction_single_ch;
+    
+    for (std::vector<string>::iterator itCh = prediction_filenames.begin()+1;
+	 itCh != prediction_filenames.end(); itCh++) {
+	read_loading_plan(
+	    *itCh, prediction_single_ch, width, height, depth);
+	if (dim[0] != depth) {
+	    string text = string("Depth of ") + *itCh + " differs from " + prediction_filenames.front() + "\n";
+	    printf(text.c_str());
+	    return -1;
+	}
+	if (dim[1] != height) {
+	    string text = string("Height of ") + *itCh + " differs from " + prediction_filenames.front() + "\n";
+	    printf(text.c_str());
+	    return -1;
+	}
+	if (dim[2] != width) {
+	    string text = string("Width of ") + *itCh + " differs from " + prediction_filenames.front() + "\n";
+	    printf(text.c_str());
+	    return -1;
+	}
 
+	padZero(prediction_single_ch, dim, pad_len, &zp_prediction_single_ch);
+	prediction_channel_list.push_back(zp_prediction_single_ch);
+        delete[] prediction_single_ch;
+    }
     Label* zp_watershed_data = NULL;
     load_watershed(watershed_filename, &zp_watershed_data);
     StackPredict* stackp = new StackPredict(zp_watershed_data, depth+2*pad_len, height+2*pad_len, width+2*pad_len, pad_len);
