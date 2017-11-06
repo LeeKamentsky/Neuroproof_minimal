@@ -49,6 +49,13 @@ class FeatureMgr {
         return num_channels;
     }
 
+    void set_simulate(bool do_simulate) {
+	simulate = do_simulate;
+    }
+    bool simulate_channel_1() {
+	return simulate;
+    }
+    
     void add_val(unsigned char _val, RagNode<Label>* node)
     {
         float val = _val*1.0/255.0;
@@ -76,13 +83,12 @@ class FeatureMgr {
     void add_val_batch(std::vector<unsigned char>* val, unsigned int channel, unsigned int& starting_pos, std::vector<void *>& feature_caches)
     {
         std::vector<FeatureCompute*>& features = channels_features[channel];
-        //printf("Channel is %d\n", channel);
         for (int i = 0; i < features.size(); ++i) {
-            #if SIMULATE_SECOND_CHANNEL
-            features[i]->add_point_batch(val, feature_caches[starting_pos], channel > 0); 
-            #else
-            features[i]->add_point_batch(val, feature_caches[starting_pos]);
-            #endif
+	    if (simulate) {
+		features[i]->add_point_batch(val, feature_caches[starting_pos], channel > 0); 
+	    } else {
+		features[i]->add_point_batch(val, feature_caches[starting_pos]);
+	    }
             ++starting_pos;
         }
     }
@@ -142,6 +148,24 @@ class FeatureMgr {
                 add_val_batch(&((*values)[i]), i, starting_pos, feature_caches);
             }
         }        
+    }
+
+    void add_val_batch(std::vector<std::vector<unsigned char> >* values, RagEdge<Label>* edge)
+    {
+	edge->incr_size((*values)[0].size());
+	assert(values->size() == num_channels);
+	unsigned starting_pos = 0;
+	if (edge_caches.find(edge) != edge_caches.end()) {
+	    std::vector<void*>& feature_caches = edge_caches[edge];
+	    for (int i = 0; i < num_channels; ++i) { 
+		add_val_batch(&((*values)[i]), i, starting_pos, feature_caches);
+	    }              
+	} else {
+	    std::vector<void*>& feature_caches = create_cache(edge);
+	    for (int i = 0; i < num_channels; ++i) { 
+		add_val_batch(&((*values)[i]), i, starting_pos, feature_caches);
+	    }
+	}        
     }
 
     void add_val(std::vector<unsigned char>& vals, RagNode<Label>* node)
@@ -306,6 +330,7 @@ class FeatureMgr {
 
     bool specified_features;
     unsigned int num_channels;
+    bool simulate;
 
     std::vector<std::vector<FeatureCompute*> > channels_features;
     std::vector<std::vector<FeatureCompute*> > channels_features_equal;

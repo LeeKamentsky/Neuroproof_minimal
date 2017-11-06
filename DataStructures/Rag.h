@@ -21,49 +21,19 @@ typedef struct {
   bool boundary; 
 } tfk_self_edge;
 
+typedef struct {
+    unsigned int id1;
+    unsigned int id2;
+    bool boundary;
+    unsigned char pred[7];
+} leek_edge;
 
+typedef struct {
+    unsigned int id1;
+    bool boundary;
+    unsigned char pred[7];
+} leek_self_edge;
 
-
-//static int tfk_compare_self (const void * a, const void * b)
-//{
-//  tfk_self_edge* e1 = (tfk_self_edge*)a;
-//  tfk_self_edge* e2 = (tfk_self_edge*)b;
-//  if (e1->id1 < e2->id1) {
-//    return -1;
-//  } else if (e1->id1 > e2->id1) {
-//    return 1;
-//  } else {
-//    return 0;
-//  }
-//}
-//
-//static int tfk_compare (const void * a, const void * b)
-//{
-//  tfk_edge* e1 = (tfk_edge*)a;
-//  tfk_edge* e2 = (tfk_edge*)b;
-//
-//  if (e1->id1 < e2->id1) {
-//    return -1;
-//  } else if (e1->id1 > e2->id1) {
-//    return 1;
-//  } else if (e1->id2 < e2->id2) {
-//    return -1;
-//  } else if (e1->id2 > e2->id2) {
-//    return 1;
-//  } else {
-//    return 0;
-//  }
-//}
-
-
-static inline bool tfk_compare_self (const tfk_self_edge& e1, const tfk_self_edge& e2)
-{
-  if (e1.id1 < e2.id1) {
-    return true;
-  } else {
-    return false;
-  }
-}
 
 static inline bool tfk_compare (const tfk_edge& e1, const tfk_edge& e2)
 {
@@ -82,6 +52,13 @@ static inline bool tfk_compare (const tfk_edge& e1, const tfk_edge& e2)
   //} else {
   //  return false;
   //}
+}
+
+static inline bool leek_compare (const leek_edge& e1, const leek_edge& e2)
+{
+  uint64_t e1_key = (((uint64_t)e1.id1) << 32uL) | e1.id2; 
+  uint64_t e2_key = (((uint64_t)e2.id1) << 32uL) | e2.id2; 
+  return e1_key < e2_key;
 }
 
 namespace NeuroProof {

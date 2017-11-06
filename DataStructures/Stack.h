@@ -74,6 +74,10 @@ class Stack {
 
     void build_rag_loop(Rag<Label>* rag, FeatureMgr* feature_man, 
                                             int x_start, int x_end, int y_start, int y_end, int z_start, int z_end, bool use_mito_prob);
+    void build_rag_loop_tfk(Rag<Label>* rag, FeatureMgr* feature_man, 
+					    int x_start, int x_end, int y_start, int y_end, int z_start, int z_end, bool use_mito_prob);
+    void build_rag_loop_leek(Rag<Label>* rag, FeatureMgr* feature_man, 
+					    int x_start, int x_end, int y_start, int y_end, int z_start, int z_end, bool use_mito_prob);
     double get_edge_weight(RagEdge<Label>* edge)
     {
         return feature_mgr->get_prob(edge);

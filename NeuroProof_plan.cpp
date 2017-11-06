@@ -209,9 +209,10 @@ int main(int argc, char** argv)
     for (int i=0; i < 256; i++) {
 	array_items[i] = (float)(i) / 255.0;
     }
-    zp_prediction_single_ch=NULL;
-    //padZero(prediction_single_ch, dim, pad_len, &zp_prediction_single_ch);
-    prediction_channel_list.push_back(zp_prediction_single_ch);
+    if (prediction_filenames.size() < 2) {
+        zp_prediction_single_ch=NULL;
+        prediction_channel_list.push_back(zp_prediction_single_ch);
+    }
 
     //printf("size fo the set is %d\n", dedupe.size());
 
@@ -255,7 +256,10 @@ int main(int argc, char** argv)
     }
 
     stackp->set_basic_features();
-    stackp->get_feature_mgr()->set_classifier(eclfr);   	 
+    stackp->get_feature_mgr()->set_classifier(eclfr);
+    if (prediction_filenames.size() < 2) {
+	stackp->get_feature_mgr()->set_simulate(true);
+    }
 
     Label* groundtruth_data=NULL;
     if (groundtruth_filename.size()>0){

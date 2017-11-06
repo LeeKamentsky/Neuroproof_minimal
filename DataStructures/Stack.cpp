@@ -235,7 +235,20 @@ void Stack::modify_assignment_after_merge(Label node_keep, Label node_remove){
 
 
 #define TFK_ARRAY_ACCESS(array, stride, x,y,z) array[stride[0]*(x)+stride[1]*(y)+stride[2]*(z)]
+
 void Stack::build_rag_loop(Rag<Label>* rag, FeatureMgr* feature_man, 
+			   int x_start, int x_end, int y_start, int y_end, 
+			   int z_start, int z_end, bool use_mito_prob) {
+    if (feature_man->simulate_channel_1()) {
+	Stack::build_rag_loop_tfk(rag, feature_man, x_start, x_end, y_start, y_end,
+	    z_start, z_end, use_mito_prob);
+    } else {
+	Stack::build_rag_loop_leek(rag, feature_man, x_start, x_end, y_start, y_end,
+	    z_start, z_end, use_mito_prob);
+    }
+}
+
+void Stack::build_rag_loop_tfk(Rag<Label>* rag, FeatureMgr* feature_man, 
                                             int x_start, int x_end, int y_start, int y_end, int z_start, int z_end, bool use_mito_prob)
 {
     unsigned int maxx = width-1; 
@@ -400,6 +413,187 @@ void Stack::build_rag_loop(Rag<Label>* rag, FeatureMgr* feature_man,
     free(sorted_edges);
 }
 
+void Stack::build_rag_loop_leek(Rag<Label>* rag, FeatureMgr* feature_man, 
+				int x_start, int x_end, int y_start, int y_end,
+				int z_start, int z_end, bool use_mito_prob)
+{
+    if (feature_man->get_num_channels() > 7) {
+	throw ErrMsg("Cannot run with more than 7 channels");
+    }
+    
+    unsigned int maxx = width-1; 
+    unsigned int maxy = height-1; 
+    unsigned int maxz = depth-1; 
+
+    std::vector<leek_edge> sorted_edges;
+
+    unsigned int * label_vol_array = watershed;
+    unsigned int plane_size = width * height;
+    uint64_t label_vol_stride[3] = {1,width,plane_size}; 
+    leek_edge edge;
+
+    if (x_start < 0) x_start = 0;
+    if (y_start < 0) y_start = 0;
+    if (z_start < 0) z_start = 0;
+
+    bool avoid_conditionals = true;
+    if (z_start - 1 < 0 || y_start -1 < 0 || x_start - 1 < 0 || z_end+1>maxz || y_end+1 > maxy || x_end+1 > maxx) {
+      avoid_conditionals = false;
+    }
+
+
+    unsigned int spots[7];
+
+    if (avoid_conditionals) {
+      unsigned int* spots_ptr[7];
+      int64_t curr_spot = x_start + y_start*width + z_start*plane_size;
+      spots_ptr[0] = watershed + curr_spot;
+      spots_ptr[1] = watershed + curr_spot-1;
+      spots_ptr[2] = watershed + curr_spot+1;
+      spots_ptr[3] = watershed + curr_spot-width;
+      spots_ptr[4] = watershed + curr_spot+width;
+      spots_ptr[5] = watershed + curr_spot-plane_size;
+      spots_ptr[6] = watershed + curr_spot+plane_size;
+
+      for (unsigned int z = z_start; z < z_end; z++) {
+	  int z_spot = z * plane_size;
+	  spots_ptr[5] += plane_size;
+	  spots_ptr[6] += plane_size;
+	  for (unsigned int y = y_start; y < y_end; y++) {
+	      int y_spot = y * width;
+	      spots_ptr[3] += width;
+	      spots_ptr[4] += width;
+	      for (unsigned int x = x_start; x < x_end; x++) {
+		  curr_spot = x + y_spot + z_spot;
+		  spots_ptr[0] += 1;
+		  spots_ptr[1] += 1;
+		  spots_ptr[2] += 1;
+		  for (int i = 0; i < 7; i++) {
+		    spots[i] = *(spots_ptr[i]);
+		  }
+
+
+		  unsigned char pred[7];
+		  for (int idx=0; idx<feature_man->get_num_channels(); idx++) {
+		      pred[idx] = prediction_array[idx][curr_spot];
+		  }
+
+		  int my_label = spots[0];
+
+		  // sort.
+		  for (int j = 0; j < 7; j++) {
+		     int insert = spots[j];
+		     int hole = j;
+		     while (hole > 0 && insert > spots[hole-1]) {
+		       spots[hole] = spots[hole-1];
+		       hole--;
+		     }
+		     spots[hole] = insert;
+		  }
+	  
+		  int last_label = my_label;
+		  bool boundary = false;
+
+		  for (int i = 0; i < 7; i++) {
+		    if (spots[i] == last_label || spots[i] == my_label) continue;
+		    if (!spots[i]) {
+		      boundary = true;
+		      last_label = spots[i];
+		      continue;
+		    }
+		    edge.id1 = my_label;
+		    edge.id2 = spots[i];
+		    for (size_t idx=0; idx<feature_man->get_num_channels(); idx++) {
+			edge.pred[idx] = pred[idx];
+		    }
+		    edge.boundary = false;
+		    sorted_edges.push_back(edge);
+		    last_label = spots[i];
+		  }
+		  // add a self edge.
+		  edge.id1 = my_label;
+		  edge.id2 = my_label;
+		  for (size_t idx=0; idx<feature_man->get_num_channels(); idx++) {
+		    edge.pred[idx] = pred[idx];
+		  }
+
+		  edge.boundary = (boundary || !my_label);
+		  sorted_edges.push_back(edge);
+	      }
+	  }
+      }
+    } else {
+      for (unsigned int z = z_start; z < z_end; z++) {
+	  int z_spot = z * plane_size;
+	  //if (z < 0 || z > maxz) continue;
+	  for (unsigned int y = y_start; y < y_end; y++) {
+	      //if (y < 0 || y > maxy) continue;
+	      int y_spot = y * width;
+	      for (unsigned int x = x_start; x < x_end; x++) {
+		  //if (x < 0 || x > maxx) continue;
+		  int64_t curr_spot = x + y_spot + z_spot;
+		  spots[0] = watershed[curr_spot];
+		  spots[1] = x >= 0 ? watershed[curr_spot-1] : 0;
+		  spots[2] = x+1 <= maxx ? watershed[curr_spot+1] : 0;
+		  spots[3] = y-1 >=0 ? watershed[curr_spot-width] : 0;
+		  spots[4] = y+1 <= maxy ? watershed[curr_spot+width] : 0;
+		  spots[5] = z-1 >= 0 ? watershed[curr_spot-plane_size] : 0;
+		  spots[6] = z+1 <= maxz ? watershed[curr_spot+plane_size] : 0;
+
+		  unsigned char pred[7];
+		  for (int idx=0; idx<feature_man->get_num_channels(); idx++) {
+		      pred[idx] = prediction_array[idx][curr_spot];
+		  }
+
+		  int my_label = spots[0];
+
+		  // sort.
+		  for (int j = 0; j < 7; j++) {
+		     int insert = spots[j];
+		     int hole = j;
+		     while (hole > 0 && insert > spots[hole-1]) {
+		       spots[hole] = spots[hole-1];
+		       hole--;
+		     }
+		     spots[hole] = insert;
+		  }
+	  
+		  int last_label = my_label;
+		  bool boundary = false;
+
+		  for (int i = 0; i < 7; i++) {
+		    if (spots[i] == last_label || spots[i] == my_label) continue;
+		    if (!spots[i]) {
+		      boundary = true;
+		      last_label = spots[i];
+		      continue;
+		    }
+		    edge.id1 = my_label;
+		    edge.id2 = spots[i];
+		    for (size_t idx=0; idx<feature_man->get_num_channels(); idx++) {
+			edge.pred[idx] = pred[idx];
+		    }
+		    edge.boundary = false;
+		    sorted_edges.push_back(edge);
+		    last_label = spots[i];
+		  }
+		  // add a self edge.
+		  edge.id1 = my_label;
+		  edge.id2 = my_label;
+  		  for (size_t idx=0; idx<feature_man->get_num_channels(); idx++) {
+		    edge.pred[idx] = pred[idx];
+		  }
+		  edge.boundary = (boundary || !my_label);
+		  sorted_edges.push_back(edge);
+	      }
+	  }
+      }
+
+    }
+ 
+    std::sort (sorted_edges.begin(), sorted_edges.end(), leek_compare);
+    rag_add_edge_batch(rag, &sorted_edges.begin()[0], sorted_edges.size(), feature_man);
+}
 
 inline void move_edge_feature (FeatureMgr* fm1, FeatureMgr* fm2, RagEdge<Label>* edge1, RagEdge<Label>* edge2) {
     // cout << "Move Edge" << endl;

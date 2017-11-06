@@ -294,7 +294,8 @@ int main(int argc, char** argv)
     }
 
     stackp->set_basic_features();
-    stackp->get_feature_mgr()->set_classifier(eclfr);   	 
+    stackp->get_feature_mgr()->set_classifier(eclfr);
+    stackp->get_feature_mgr()->set_simulate(true);
 
     Label* groundtruth_data=NULL;
     if (groundtruth_filename.size()>0){  	
