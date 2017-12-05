@@ -86,21 +86,26 @@ template <typename T> void read_loading_plan(
             throw NeuroProof::ErrMsg("Failed to read \"" + location + "\".");
         }
        
-        for (unsigned int tiffZ=svz0; tiffZ < svz1; tiffZ++) {
+        /*
+         * Special case: Python tifffile will take a volume that has 
+         * a width or height of 1 and turn it into a single XZ or YZ plane
+         *
+         */
+        if ((svx1 - svx0 == 1) || (svy1 - svy0 == 1)) {
             uint32 tiffWidth;
             uint32 tiffHeight;
             uint16 tiffBitsPerSample;
             uint16 tiffSamplesPerPixel;
             TIFFGetField(tiff, TIFFTAG_IMAGEWIDTH, &tiffWidth);
-            if (tiffWidth != svx1 - svx0) {
-                TIFFClose(tiff);
-                std::cerr << "TIFF width not equal to expected" << std::endl;
-                throw NeuroProof::ErrMsg("TIFF width not equal to expected");
-            }
             TIFFGetField(tiff, TIFFTAG_IMAGELENGTH, &tiffHeight);
-            if (tiffHeight != svy1 - svy0) {
+            if (tiffWidth != (svx1 - svx0) * (svy1 - svy0)) {
                 TIFFClose(tiff);
-                std::cerr << "TIFF height not equal to expected" << std::endl;
+                std::cerr << "TIFF size not equal to expected" << std::endl;
+                throw NeuroProof::ErrMsg("TIFF height not equal to expected");
+            }
+            if (tiffHeight != svz1 - svz0) {
+                TIFFClose(tiff);
+                std::cerr << "TIFF size not equal to expected" << std::endl;
                 throw NeuroProof::ErrMsg("TIFF height not equal to expected");
             }
             TIFFGetField(tiff, TIFFTAG_BITSPERSAMPLE, &tiffBitsPerSample);
@@ -115,19 +120,75 @@ template <typename T> void read_loading_plan(
                 std::cerr << "More than one sample / pixel" << std::endl;
                 throw NeuroProof::ErrMsg("More than one sample / pixel");
             }
-           
-            for (unsigned int tiffY=svy0; tiffY < svy1; tiffY++) {
-                size_t offset = ((tiffZ - z0) * height + (tiffY-y0)) * width +
-                             svx0 - x0;
-                TIFFReadScanline(tiff, (tdata_t)(result+offset), tiffY-svy0);
-            }
-            if (! TIFFReadDirectory(tiff)) {
-                if (tiffZ != svz1 - 1) {
-                    std::cerr << "TIFF stack " << location << " contained too few slices" << std::endl;
-                    break;
+            /*
+             * Have to read individual voxels and advance in Y
+             */
+            if (svx1 - svx0 == 1) {
+                std::cout << "Reading single plane as Y scans" << std::endl;
+                std::unique_ptr<tdata_t> buf{ new tdata_t [tiffWidth] };
+                for (unsigned int tiffZ=svz0; tiffZ < svz1; tiffZ++) {
+                    TIFFReadScanline(tiff, &*buf, tiffZ-svz0);
+                    for (unsigned int tiffY=svy0; tiffY < svy1; tiffY++) {
+                        size_t offset = ((tiffZ - z0) * height + 
+                                         (tiffY-y0)) * width +
+                                         svx0 - x0;
+                        result[offset] = ((T *)&*buf)[tiffY - svy0];
+                    }
+                }   
+            } else {
+                /* Read scan lines, but advance in Z */
+                std::cout << "Reading single plane as X scans" << std::endl;
+                for (unsigned int tiffZ=svz0; tiffZ < svz1; tiffZ++) {
+                    size_t offset = ((tiffZ - z0) * height + (svy0-y0)) * width +
+                                 svx0 - x0;
+                    TIFFReadScanline(tiff, (tdata_t)(result+offset), tiffZ-svz0);
                 }
             }
-        }
+        } else {
+            
+            for (unsigned int tiffZ=svz0; tiffZ < svz1; tiffZ++) {
+                uint32 tiffWidth;
+                uint32 tiffHeight;
+                uint16 tiffBitsPerSample;
+                uint16 tiffSamplesPerPixel;
+                TIFFGetField(tiff, TIFFTAG_IMAGEWIDTH, &tiffWidth);
+                if (tiffWidth != svx1 - svx0) {
+                    TIFFClose(tiff);
+                    std::cerr << "TIFF width not equal to expected" << std::endl;
+                    throw NeuroProof::ErrMsg("TIFF width not equal to expected");
+                }
+                TIFFGetField(tiff, TIFFTAG_IMAGELENGTH, &tiffHeight);
+                if (tiffHeight != svy1 - svy0) {
+                    TIFFClose(tiff);
+                    std::cerr << "TIFF height not equal to expected" << std::endl;
+                    throw NeuroProof::ErrMsg("TIFF height not equal to expected");
+                }
+                TIFFGetField(tiff, TIFFTAG_BITSPERSAMPLE, &tiffBitsPerSample);
+                if (tiffBitsPerSample / 8 != sizeof(T)) {
+                    TIFFClose(tiff);
+                    std::cerr << "# of bits / pixel does not match" << std::endl;
+                    throw NeuroProof::ErrMsg("# of bits / pixel does not match");
+                }
+                TIFFGetField(tiff, TIFFTAG_SAMPLESPERPIXEL, &tiffSamplesPerPixel);
+                if (tiffSamplesPerPixel != 1) {
+                    TIFFClose(tiff);
+                    std::cerr << "More than one sample / pixel" << std::endl;
+                    throw NeuroProof::ErrMsg("More than one sample / pixel");
+                }
+               
+                for (unsigned int tiffY=svy0; tiffY < svy1; tiffY++) {
+                    size_t offset = ((tiffZ - z0) * height + (tiffY-y0)) * width +
+                                 svx0 - x0;
+                    TIFFReadScanline(tiff, (tdata_t)(result+offset), tiffY-svy0);
+                }
+                if (! TIFFReadDirectory(tiff)) {
+                    if (tiffZ != svz1 - 1) {
+                        std::cerr << "TIFF stack " << location << " contained too few slices" << std::endl;
+                        break;
+                    }
+                }
+            }
+       }
        TIFFClose(tiff);
     }
     TIFFSetWarningHandler(old_handler);
