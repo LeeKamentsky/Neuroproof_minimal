@@ -91,14 +91,14 @@ template <typename T> void read_loading_plan(
          * a width or height of 1 and turn it into a single XZ or YZ plane
          *
          */
-        if ((svx1 - svx0 == 1) || (svy1 - svy0 == 1)) {
+        if (svx1 - svx0 == 1) {
             uint32 tiffWidth;
             uint32 tiffHeight;
             uint16 tiffBitsPerSample;
             uint16 tiffSamplesPerPixel;
             TIFFGetField(tiff, TIFFTAG_IMAGEWIDTH, &tiffWidth);
             TIFFGetField(tiff, TIFFTAG_IMAGELENGTH, &tiffHeight);
-            if (tiffWidth != (svx1 - svx0) * (svy1 - svy0)) {
+            if (tiffWidth != (svy1 - svy0)) {
                 TIFFClose(tiff);
                 std::cerr << "TIFF size not equal to expected" << std::endl;
                 throw NeuroProof::ErrMsg("TIFF height not equal to expected");
@@ -120,30 +120,17 @@ template <typename T> void read_loading_plan(
                 std::cerr << "More than one sample / pixel" << std::endl;
                 throw NeuroProof::ErrMsg("More than one sample / pixel");
             }
-            /*
-             * Have to read individual voxels and advance in Y
-             */
-            if (svx1 - svx0 == 1) {
-                std::cout << "Reading single plane as Y scans" << std::endl;
-                std::unique_ptr<tdata_t> buf{ new tdata_t [tiffWidth] };
-                for (unsigned int tiffZ=svz0; tiffZ < svz1; tiffZ++) {
-                    TIFFReadScanline(tiff, &*buf, tiffZ-svz0);
-                    for (unsigned int tiffY=svy0; tiffY < svy1; tiffY++) {
-                        size_t offset = ((tiffZ - z0) * height + 
-                                         (tiffY-y0)) * width +
-                                         svx0 - x0;
-                        result[offset] = ((T *)&*buf)[tiffY - svy0];
-                    }
-                }   
-            } else {
-                /* Read scan lines, but advance in Z */
-                std::cout << "Reading single plane as X scans" << std::endl;
-                for (unsigned int tiffZ=svz0; tiffZ < svz1; tiffZ++) {
-                    size_t offset = ((tiffZ - z0) * height + (svy0-y0)) * width +
-                                 svx0 - x0;
-                    TIFFReadScanline(tiff, (tdata_t)(result+offset), tiffZ-svz0);
+            std::cout << "Reading single plane as Y scans" << std::endl;
+            std::unique_ptr<tdata_t> buf{ new tdata_t [tiffWidth] };
+            for (unsigned int tiffZ=svz0; tiffZ < svz1; tiffZ++) {
+                TIFFReadScanline(tiff, &*buf, tiffZ-svz0);
+                for (unsigned int tiffY=svy0; tiffY < svy1; tiffY++) {
+                    size_t offset = ((tiffZ - z0) * height + 
+                                     (tiffY-y0)) * width +
+                                     svx0 - x0;
+                    result[offset] = ((T *)&*buf)[tiffY - svy0];
                 }
-            }
+            }   
         } else {
             
             for (unsigned int tiffZ=svz0; tiffZ < svz1; tiffZ++) {
